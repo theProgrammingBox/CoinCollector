@@ -3,6 +3,11 @@
 #include <stdint.h>
 #include <time.h>
 
+/*
+- Grass
+-- has 3 stages, .., ss and SS
+*/
+
 uint16_t rand16(uint32_t* seed) {
     *seed ^= *seed >> 16;
     *seed *= 0xBAC57D37;
@@ -40,14 +45,14 @@ int main() {
                 switch (grid[ry << 8 | rx]) {
                     case 0: printf(".."); break;
                     case 1: printf("[]"); break;
-                    case 2: printf("$$"); break;
+                    case 2: printf("qp"); break;
                 }
             }
             printf("\n");
         }
         
         printf("Coins: %d\n", coins);
-        printf("Move (WASD): ");
+        printf("Move (wasd): ");
         scanf(" %c", &move);
         
         grid[pidx] = 0;
