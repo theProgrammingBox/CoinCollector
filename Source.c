@@ -1,68 +1,66 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <time.h>
 
-#define GRID_SIZE 9
-#define NUM_COINS 9
-#define VIEW_RADIUS 4
-
-unsigned int customRand(unsigned int* seed) {
+uint16_t rand16(uint32_t* seed) {
+    *seed ^= *seed >> 16;
     *seed *= 0xBAC57D37;
     *seed ^= *seed >> 16;
     *seed *= 0x24F66AC9;
-    *seed ^= *seed >> 16;
     return *seed;
 }
 
-void placeCoin(char *grid, unsigned int* seed) {
-    int pos;
+void placeCoin(uint8_t *grid, uint32_t* seed) {
+    uint16_t pos;
     do {
-        pos = customRand(seed) % (GRID_SIZE * GRID_SIZE);
-    } while (grid[pos] != '_');
-    grid[pos] = 'C';
+        pos = rand16(seed);
+    } while (grid[pos]);
+    grid[pos] = 2;
 }
 
 int main() {
-    unsigned int seed = time(NULL) ^ 0xE621B963;
-    char *grid = malloc(GRID_SIZE * GRID_SIZE * sizeof(char));
-    int x = 0, y = 0, coinsCollected = 0;
-    char move;
+    const uint16_t NUM_COINS = 256 * 16;
+    const uint8_t VIEW_RADIUS = 8;
+    const uint8_t VIEW_SIZE = VIEW_RADIUS * 2 + 1;
 
-    for (int i = 0; i < 8; i++) customRand(&seed);
-    memset(grid, '_', GRID_SIZE * GRID_SIZE * sizeof(char));
-    grid[0] = 'P';
-
+    uint32_t seed = time(NULL);
+    uint8_t *grid = malloc(0x10000);
+    uint8_t x = 0, y = 0, move;
+    uint16_t coins = 0;
+    
+    memset(grid, 0, 0x10000);
+    grid[0] = 1;
     for (int i = 0; i < NUM_COINS; ++i) placeCoin(grid, &seed);
-
-    while (1) {
+    
+    while(1) {
         system("clear");
-        for (int i = -VIEW_RADIUS; i <= VIEW_RADIUS; i++) {
-            for (int j = -VIEW_RADIUS; j <= VIEW_RADIUS; j++) {
-                int row = (x + i + GRID_SIZE) % GRID_SIZE;
-                int col = (y + j + GRID_SIZE) % GRID_SIZE;
-                printf("%c ", grid[row * GRID_SIZE + col]);
+        for (uint8_t i = VIEW_SIZE, ry = y + VIEW_RADIUS; i--; ry--) {
+            for (uint8_t j = VIEW_SIZE, rx = x + VIEW_RADIUS; j--; rx--) {
+                switch (grid[rx + ry * 0x100]) {
+                    case 0: printf(".."); break;
+                    case 1: printf("[]"); break;
+                    case 2: printf("$$"); break;
+                }
             }
             printf("\n");
         }
-        printf("\nCoins Collected: %d\n", coinsCollected);
+        
+        printf("Coins: %d\n", coins);
         printf("Move (WASD): ");
         scanf(" %c", &move);
         
-        int newX = (x + (move == 's') - (move == 'w') + GRID_SIZE) % GRID_SIZE;
-        int newY = (y + (move == 'd') - (move == 'a') + GRID_SIZE) % GRID_SIZE;
-        int newIndex = newX * GRID_SIZE + newY;
-
-        if (grid[newIndex] == 'C') {
-            coinsCollected++;
+        grid[x + y * 0x100] = 0;
+        x += (move == 'a') - (move == 'd');
+        y += (move == 'w') - (move == 's');
+        
+        if (grid[x + y * 0x100] == 2) {
+            coins++;
             placeCoin(grid, &seed);
         }
-
-        grid[x * GRID_SIZE + y] = '_';
-        grid[newIndex] = 'P';
-        x = newX;
-        y = newY;
+        grid[x + y * 0x100] = 1;
     }
-
+    
     free(grid);
     return 0;
 }
