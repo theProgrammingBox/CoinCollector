@@ -1,9 +1,12 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
-#define GRID_SIZE 8
-#define NUM_COINS 8
+#define GRID_SIZE 9
+#define NUM_COINS 9
+#define VIEW_RADIUS 4
 
-unsigned int randomSeed(unsigned int* seed) {
+unsigned int customRand(unsigned int* seed) {
     *seed *= 0xBAC57D37;
     *seed ^= *seed >> 16;
     *seed *= 0x24F66AC9;
@@ -14,7 +17,7 @@ unsigned int randomSeed(unsigned int* seed) {
 void placeCoin(char *grid, unsigned int* seed) {
     int pos;
     do {
-        pos = randomSeed(seed) % (GRID_SIZE * GRID_SIZE);
+        pos = customRand(seed) % (GRID_SIZE * GRID_SIZE);
     } while (grid[pos] != '_');
     grid[pos] = 'C';
 }
@@ -25,7 +28,7 @@ int main() {
     int x = 0, y = 0, coinsCollected = 0;
     char move;
 
-    for (int i = 0; i < 8; i++) randomSeed(&seed);
+    for (int i = 0; i < 8; i++) customRand(&seed);
     memset(grid, '_', GRID_SIZE * GRID_SIZE * sizeof(char));
     grid[0] = 'P';
 
@@ -33,9 +36,14 @@ int main() {
 
     while (1) {
         system("clear");
-        for (int i = 0; i < GRID_SIZE; i++, printf("\n"))
-            for (int j = 0; j < GRID_SIZE; j++)
-                printf("%c ", grid[i * GRID_SIZE + j]);
+        for (int i = -VIEW_RADIUS; i <= VIEW_RADIUS; i++) {
+            for (int j = -VIEW_RADIUS; j <= VIEW_RADIUS; j++) {
+                int row = (x + i + GRID_SIZE) % GRID_SIZE;
+                int col = (y + j + GRID_SIZE) % GRID_SIZE;
+                printf("%c ", grid[row * GRID_SIZE + col]);
+            }
+            printf("\n");
+        }
         printf("\nCoins Collected: %d\n", coinsCollected);
         printf("Move (WASD): ");
         scanf(" %c", &move);
