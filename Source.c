@@ -253,9 +253,8 @@ int main() {
     
     for (int i = 0x10; i--; ) {
         for (int j = 0x10; j--; ) {
-            double a = (open_simplex_noise2(ctx, i * 0.2, j * 0.2) + 1) * 4;
+            double a = (open_simplex_noise2(ctx, i * 0.3, j * 0.3) + 1) * 4;
             uint8_t b = a;
-            // printf("%d ", b);
             switch (b) {
                 case 0: printf("  "); break;
                 case 1: printf(".."); break;
@@ -265,7 +264,6 @@ int main() {
                 case 5: printf("ll"); break;
                 case 6: printf("ww"); break;
                 case 7: printf("WW"); break;
-                case 8: printf("[]"); break;
             }
         }
         printf("\n");
