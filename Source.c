@@ -1,50 +1,18 @@
 #include "Header.h"
 #include <unistd.h>
 
-double layerNoise(const struct osn_context *ctx, uint8_t iterations, double x, double y) {
-    double value = 0;
-    double layerScale = 1;
-    double scale = 0;
-    for (int i = iterations; i--;) {
-        value += open_simplex_noise2(ctx, x * layerScale, y * layerScale) / layerScale;
-        layerScale *= 2;
-        scale += 1 / layerScale;
-    }
-    return value / scale;
-}
-
-double seamlessNoise4D(const struct osn_context *ctx, double x, double y, double gridWidth, double gridHeight, float frequency) {
+double seamlessNoise2D(const struct osn_context *ctx, double x, double y, double gridWidth, double gridHeight, float frequency) {
     const double TWO_PI = 6.28318530718;
     
-    // Convert 2D coordinates to angles for toroidal mapping
     double u = (x / gridWidth) * TWO_PI;
     double v = (y / gridHeight) * TWO_PI;
 
-    // Map onto a torus
-    double nx = cos(u) + 0.5 * cos(u) * cos(v) * frequency;
-    double ny = sin(u) + 0.5 * sin(u) * cos(v) * frequency;
-    double nz = 0.5 * sin(v) * frequency;
-    double nw = 0.5 * cos(v) * frequency;
+    double nx = cos(u) * frequency;
+    double ny = sin(u) * frequency;
+    double nz = sin(v) * frequency;
+    double nw = cos(v) * frequency;
 
-    // Get noise value from 4D noise function
     return open_simplex_noise4(ctx, nx, ny, nz, nw);
-}
-
-double octaveNoise4D(const struct osn_context *ctx, double x, double y, double gridWidth, double gridHeight, int octaves) {
-    double value = 0;
-    double frequency = 1.0;
-    double amplitude = 1.0;
-    double max = 0; // Used for normalizing result to 0.0 - 1.0
-
-    for (int i = 0; i < octaves; i++) {
-        value += seamlessNoise4D(ctx, x * frequency, y * frequency, gridWidth, gridHeight, 16) * amplitude;
-        max += amplitude;
-
-        amplitude *= 0.5;
-        frequency *= 2.0;
-    }
-
-    return value / max; // Normalize the result
 }
 
 uint16_t rand16(uint32_t* seed) {
@@ -71,25 +39,22 @@ int main() {
     for (uint32_t i = 0x10000; i--;) {
         double x = (i & 0xFF);
         double y = (i >> 8);
-        // grid[i] = (open_simplex_noise2(ctx, x * 0.2, y * 0.2) + 1) * 4;
-        // grid[i] = (layerNoise(ctx, 4, x * 0.2, y * 0.2) + 1) * 4;
-        // grid[i] = (seamlessNoise4D(ctx, x, y, 0x100, 0x100, 16) + 1) * 4;
-        grid[i] = (octaveNoise4D(ctx, x, y, 0x100, 0x100, 1) + 1) * 4;
+        grid[i] = (seamlessNoise1D(ctx, x, y, 0x100, 0x100, 8) + 1) * 4;
     }
     grid[0] = 1;
     
-    while(1) {
+    // while(1) {
         system("clear");
         for (uint8_t i = VIEW_SIZE, ry = y + VIEW_RADIUS; i--; ry--) {
             for (uint8_t j = VIEW_SIZE, rx = x + VIEW_RADIUS; j--; rx--) {
                 switch (grid[ry << 8 | rx]) {
                 
-                case 0: printf("\x1b[38;2;0;0;128m..\x1b[0m"); break; // Deep Water (Dark Blue)
+                case 0: printf("\x1b[38;2;000;000;128m..\x1b[0m"); break; // Deep Water (Dark Blue)
                 case 1: printf("\x1b[38;2;135;206;235m--\x1b[0m"); break; // Shallow Water (Sky Blue)
                 case 2: printf("\x1b[38;2;210;180;140m;;\x1b[0m"); break; // Sand (Tan)
-                case 3: printf("\x1b[38;2;0;140;0m==\x1b[0m"); break; // Grass (Green)
-                case 4: printf("\x1b[38;2;0;80;0m++\x1b[0m"); break; // Forest (Darker Green)
-                case 5: printf("\x1b[38;2;139;69;19m**\x1b[0m"); break; // Dirt or Earth (Brown)
+                case 3: printf("\x1b[38;2;000;140;000m==\x1b[0m"); break; // Grass (Green)
+                case 4: printf("\x1b[38;2;000;080;000m++\x1b[0m"); break; // Forest (Darker Green)
+                case 5: printf("\x1b[38;2;139;069;019m**\x1b[0m"); break; // Dirt or Earth (Brown)
                 case 6: printf("\x1b[38;2;128;128;128m##\x1b[0m"); break; // Rocky Terrain (Gray)
                 case 7: printf("\x1b[38;2;255;255;255m@@\x1b[0m"); break; // Snow or High Altitude (White)
                 }
@@ -100,13 +65,14 @@ int main() {
         // printf("Move (wasd): ");
         // scanf(" %c", &move);
         
-        x++;
-        y++;
+        // x++;
+        // y++;
+        // usleep(80000);
+
         // x += (move == 'a') - (move == 'd');
         // y += (move == 'w') - (move == 's');
         pidx = y << 8 | x;
-        usleep(80000);
-    }
+    // }
     
     free(grid);
     return 0;
