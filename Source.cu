@@ -26,7 +26,7 @@ void printDeviceTensor8(const uint8_t *d_data, uint32_t size) {
     uint8_t *h_data = (uint8_t *) malloc(size * sizeof(uint8_t));
     checkCudaStatus(cudaMemcpy(h_data, d_data, size * sizeof(uint8_t), cudaMemcpyDeviceToHost));
     for (uint32_t i = 0; i < size; i++) {
-        printf("%d ", h_data[i]);
+        printf("%d ", (int8_t)h_data[i]);
     }
     printf("\n\n");
     free(h_data);

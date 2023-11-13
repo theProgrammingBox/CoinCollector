@@ -2137,6 +2137,7 @@ double open_simplex_noise4(const struct osn_context *ctx, double x, double y, do
 	{
 		attn_ext1 *= attn_ext1;
 		value += attn_ext1 * attn_ext1 * extrapolate4(ctx, xsv_ext1, ysv_ext1, zsv_ext1, wsv_ext1, dx_ext1, dy_ext1, dz_ext1, dw_ext1);
+		return extrapolate4(ctx, xsv_ext1, ysv_ext1, zsv_ext1, wsv_ext1, dx_ext1, dy_ext1, dz_ext1, dw_ext1) / NORM_CONSTANT_4D;
 	}
 
 	/* Third extra vertex */
