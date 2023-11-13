@@ -7,26 +7,6 @@ inline void checkCudaStatus(cudaError_t status) {
     }
 }
 
-void printDeviceTensor16(const uint16_t *d_data, uint32_t size) {
-    uint16_t *h_data = (uint16_t *) malloc(size * sizeof(uint16_t));
-    checkCudaStatus(cudaMemcpy(h_data, d_data, size, cudaMemcpyDeviceToHost));
-    for (uint32_t i = 0; i < size; i++) {
-        printf("%d ", h_data[i]);
-    }
-    printf("\n\n");
-    free(h_data);
-}
-
-void printDeviceTensor8(const uint8_t *d_data, uint32_t size) {
-    uint8_t *h_data = (uint8_t *) malloc(size * sizeof(uint8_t));
-    checkCudaStatus(cudaMemcpy(h_data, d_data, size, cudaMemcpyDeviceToHost));
-    for (uint32_t i = 0; i < size; i++) {
-        printf("%d ", h_data[i]);
-    }
-    printf("\n\n");
-    free(h_data);
-}
-
 __device__ int fastFloor(float x) {
     int xi = (int) x;
     return x < xi ? xi - 1 : xi;
@@ -34,6 +14,7 @@ __device__ int fastFloor(float x) {
 
 __global__ void fillTensor(uint16_t *perm, uint32_t seed) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    // perm[idx] = 1;
 	seed ^= idx;
 	seed *= 0xBAC57D37;
 	seed ^= seed >> 16;
@@ -359,6 +340,7 @@ __device__ float open_simplex_noise4(const uint16_t *perm, float x, float y, flo
 			aPoint = 0x07;
 		}
 		
+    return 5;
 		/* Now we determine the three lattice points not part of the pentachoron that may contribute.
 		   This depends on the closest two pentachoron vertices, including (0,0,0,0) */
 		uins = 4 - inSum;
@@ -1404,12 +1386,12 @@ __device__ float open_simplex_noise4(const uint16_t *perm, float x, float y, flo
 	return value / NORM_CONSTANT_4D;
 }
 
-__global__ void test(uint8_t *data, uint16_t *perm, uint32_t width) {
+__global__ void test(uint8_t *data, uint16_t *perm) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     float x = (idx & 0xFFFF) * 0.00009587379924285;
     float y = (idx >> 16) * 0.00009587379924285;
     float cosx, sinx, cosy, siny;
     sincosf(x, &sinx, &cosx);
     sincosf(y, &siny, &cosy);
-    data[idx] = open_simplex_noise4(perm, cosx * 10, sinx * 10, cosy * 10, siny * 10) + 10;
+    data[idx] = (open_simplex_noise4(perm, cosx * 10, sinx * 10, cosy * 10, siny * 10) + 1) * 4;
 }
