@@ -82,7 +82,7 @@ int main() {
     uint8_t x = 0, y = 0, move;
     uint16_t pidx = 0;
     
-    octaveNoise2D(grid, 0x100, 0x100, 4, 8);
+    octaveNoise2D(grid, 0x100, 0x100, 4, 4);
     
     while(1) {
         system("clear");
@@ -102,15 +102,15 @@ int main() {
             printf("\n");
         }
 
-        printf("Move (wasd): ");
-        scanf(" %c", &move);
+        // printf("Move (wasd): ");
+        // scanf(" %c", &move);
         
-        // x++;
-        // y++;
-        // usleep(80000);
+        x++;
+        y++;
+        usleep(80000);
 
-        x += ((move == 'a') - (move == 'd')) * 16;
-        y += ((move == 'w') - (move == 's')) * 16;
+        // x += ((move == 'a') - (move == 'd')) * 16;
+        // y += ((move == 'w') - (move == 's')) * 16;
         pidx = y << 8 | x;
     }
     
