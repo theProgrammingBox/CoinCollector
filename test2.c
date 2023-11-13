@@ -44,54 +44,26 @@ void octaveNoise2D(uint8_t *grid, uint32_t gridSize, uint8_t octaves, float zoom
     struct osn_context *ctxs[octaves];
     for (int i = octaves; i--;) open_simplex_noise(rand32(seed), &ctxs[i]);
     
-    // float invMax = 1.0f / ((1 << octaves) - 1);
-    // float sum;
-    // uint16_t cosIdx2 = gridSize >> 2;
-    // for (uint32_t y = gridSize; y--; cosIdx2--) {
-    //     const float x2 = sines[cosIdx2];
-    //     const float y2 = sines[y];
-    //     uint16_t cosIdx1 = gridSize >> 2;
-    //     for (uint32_t x = gridSize; x--; cosIdx1--) {
-    //         const float x1 = sines[cosIdx1];
-    //         const float y1 = sines[x];
-    //         sum = 0;
-    //         for (uint8_t i = octaves; i--;) {
-    //             sum += open_simplex_noise4(ctxs[i], x1 * coef2s[i], y1 * coef2s[i], x2 * coef2s[i], y2 * coef2s[i]) * amplitude[i];
-    //         }
-    //         sum *= invMax;
-    //         grid[y * gridSize + x] = (((sum < 0) ? -func(-sum) : func(sum)) + 1) * 4;
-    //     }
-    // }
-    
-    printf("open_simplex_noise4(ctxs[0], 0, 0, 0, 0) = %f\n", open_simplex_noise4(ctxs[0], 0, 0, 0, 0));
+    float invMax = 1.0f / ((1 << octaves) - 1);
+    float sum;
+    uint16_t cosIdx2 = gridSize >> 2;
+    for (uint32_t y = gridSize; y--; cosIdx2--) {
+        const float x2 = sines[cosIdx2];
+        const float y2 = sines[y];
+        uint16_t cosIdx1 = gridSize >> 2;
+        for (uint32_t x = gridSize; x--; cosIdx1--) {
+            const float x1 = sines[cosIdx1];
+            const float y1 = sines[x];
+            sum = 0;
+            for (uint8_t i = octaves; i--;) {
+                sum += open_simplex_noise4(ctxs[i], x1 * coef2s[i], y1 * coef2s[i], x2 * coef2s[i], y2 * coef2s[i]) * amplitude[i];
+            }
+            sum *= invMax;
+            grid[y * gridSize + x] = (((sum < 0) ? -func(-sum) : func(sum)) + 1) * 4;
+        }
+    }
     
     for (int i = octaves; i--;) open_simplex_noise_free(ctxs[i]);
-    
-    // double frequencies[octaves];
-    // double invFrequencies[octaves];
-    // struct osn_context *ctxs[octaves];
-    // for (int i = octaves; i--;) open_simplex_noise(rand32(seed), &ctxs[i]);
-    
-    // double max = 0;
-    // double frequency = zoomOut;
-    // for (int i = octaves; i--;) {
-    //     frequencies[i] = frequency;
-    //     invFrequencies[i] = 1 / frequency;
-    //     max += invFrequencies[i];
-    //     frequency *= 2;
-    // }
-    
-    // double sum;
-    // for (int y = gridSize; y--;) {
-    //     for (int x = gridSize; x--;) {
-    //         sum = 0;
-    //         for (int i = octaves; i--;) sum += seamlessNoise2D(ctxs[i], x, y, gridSize, frequencies[i]) * invFrequencies[i];
-    //         sum /= max;
-    //         grid[y * gridSize + x] = (((sum < 0) ? -func(-sum) : func(sum)) + 1) * 4;
-    //     }
-    // }
-    
-    // for (int i = octaves; i--;) open_simplex_noise_free(ctxs[i]);
 }
 
 int main() {

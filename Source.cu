@@ -37,7 +37,7 @@ int main() {
     for (uint8_t i = 16; i--;) rand32(&seed);
     
     uint16_t permSize = 256;
-    uint64_t size = 1024;
+    uint64_t size = 0x100000000;
     
     uint16_t *d_perm;
     uint8_t *d_data;
@@ -49,7 +49,7 @@ int main() {
     test<<<size >> 10, 1024>>>(d_data, d_perm);
     
     printDeviceTensor16(d_perm, 256);
-    printDeviceTensor8(d_data, size);
+    printDeviceTensor8(d_data, 256);
     
     checkCudaStatus(cudaFree(d_data));
     checkCudaStatus(cudaFree(d_perm));
