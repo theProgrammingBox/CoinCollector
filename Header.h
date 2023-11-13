@@ -14,7 +14,7 @@
 
 struct osn_context {
 	int16_t *perm;
-	int16_t *permGradIndex3D;
+	int16_t *permGradIndex3D; // for 3d
 };
 
 // static const int8_t gradients2D[] = {
@@ -98,58 +98,32 @@ static int allocate_perm(struct osn_context *ctx, int nperm, int ngrad)
 	return 0;
 }
 
-int open_simplex_noise(int64_t seed, struct osn_context **ctx)
+int open_simplex_noise(int32_t seed, struct osn_context **ctx)
 {
-	int rc;
-	int16_t source[256];
-	int i;
 	int16_t *perm;
 	int16_t *permGradIndex3D;
-	int r;
 
 	*ctx = (struct osn_context *) malloc(sizeof(**ctx));
-	(*ctx)->perm = NULL;
-	(*ctx)->permGradIndex3D = NULL;
-
-	rc = allocate_perm(*ctx, 256, 256);
-	if (rc) {
-		free(*ctx);
-		return rc;
-	}
+	allocate_perm(*ctx, 256, 256);
 
 	perm = (*ctx)->perm;
 	permGradIndex3D = (*ctx)->permGradIndex3D;
-
-	uint64_t seedU = seed;
-	for (i = 0; i < 256; i++)
-		source[i] = (int16_t) i;
-	seedU = seedU * 6364136223846793005ULL + 1442695040888963407ULL;
-	seedU = seedU * 6364136223846793005ULL + 1442695040888963407ULL;
-	seedU = seedU * 6364136223846793005ULL + 1442695040888963407ULL;
-	for (i = 255; i >= 0; i--) {
-		seedU = seedU * 6364136223846793005ULL + 1442695040888963407ULL;
-		r = (int)((seedU + 31) % (i + 1));
-		if (r < 0)
-			r += (i + 1);
-		perm[i] = source[r];
-		permGradIndex3D[i] = (short)((perm[i] % 24) * 3);
-		source[r] = source[i];
+	
+	for (uint16_t i = 256; i--;) {
+		seed ^= seed >> 16;
+		seed *= 0xBAC57D37;
+		seed ^= seed >> 16;
+		seed *= 0x24F66AC9;
+		perm[i] = seed & 0xFF;
+		// permGradIndex3D[i] = seed >> 16;
 	}
 	return 0;
 }
 
 void open_simplex_noise_free(struct osn_context *ctx)
 {
-	if (!ctx)
-		return;
-	if (ctx->perm) {
-		free(ctx->perm);
-		ctx->perm = NULL;	
-	}
-	if (ctx->permGradIndex3D) {
-		free(ctx->permGradIndex3D);
-		ctx->permGradIndex3D = NULL;
-	}
+	free(ctx->perm);
+	free(ctx->permGradIndex3D);
 	free(ctx);
 }
 

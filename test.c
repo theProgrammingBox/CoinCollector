@@ -107,7 +107,7 @@ int main() {
         
         x++;
         y++;
-        usleep(80000);
+        usleep(100000);
 
         // x += ((move == 'a') - (move == 'd')) * 16;
         // y += ((move == 'w') - (move == 's')) * 16;
