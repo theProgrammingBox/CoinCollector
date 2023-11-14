@@ -4,6 +4,23 @@
 
 #include "Header.cuh"
 
+/*
+- 32 bits may be too big as you need over 3 million agents to fill in density
+    - for 16 bits by 16 bits, 64 agents is good enough
+    - also, more proccessing for more map octaves
+- alter map height decision for "regions"
+- agents can spend a bit of energy to reserve extra awarness frames where they can see the screen n more times taking up exponentially more energy
+    - then if agents choose, they can make actions for each frame but it takes up a lot more energy than reserving the frames
+    - basically it is a board game, but the turn doesn't end until the agent chooses to end it at the cost of a lot of energy
+    - normally you would see agents move one tile at a time, but if they reserve frames, they can move multiple tiles at a time in one turn
+    - a way of allowing more dynamic and self stabilizing behavior if certain parameters are exploited
+- each herbivore agent needs to eat greens, breath air, heal, and drink water
+- each carnivore agent needs to eat herbivores, breath air, heal, and drink water
+- all agents can dive, they will look like deep water if so.
+
+- make a test agent for the user to control first
+*/
+
 inline void checkCudaStatus(cudaError_t status) {
     if (status != cudaSuccess) {
         printf("cuda API failed with status %d: %s\n", status, cudaGetErrorString(status));
