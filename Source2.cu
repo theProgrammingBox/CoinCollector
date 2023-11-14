@@ -61,7 +61,7 @@ int main() {
         system("clear");
         for (uint16_t i = VIEW_SIZE, ry = y + VIEW_RADIUS; i--; ry--) {
             for (uint16_t j = VIEW_SIZE, rx = x + VIEW_RADIUS; j--; rx--) {
-                switch (hData[ry << 16 | rx]) {
+                switch (hData[(uint32_t)ry << 16 | rx]) {
                     case 0: printf("\x1b[38;2;000;000;139m..\x1b[0m"); break;
                     case 1: printf("\x1b[38;2;000;105;148m--\x1b[0m"); break;
                     case 2: printf("\x1b[38;2;173;216;230m;;\x1b[0m"); break;
@@ -71,6 +71,7 @@ int main() {
                     case 6: printf("\x1b[38;2;010;120;010m##\x1b[0m"); break;
                     case 7: printf("\x1b[38;2;000;080;000m@@\x1b[0m"); break;
                 }
+                // printf("\x1b[38;2;000;000;139m..\x1b[0m");
             }
             printf("\n");
         }
