@@ -32,7 +32,7 @@ void fillHData(uint8_t *hData, const uint32_t seed1, const uint32_t seed2) {
     checkCudaStatus(cudaMalloc((void**)&dData, 0x100000000 * sizeof(uint8_t)));
     
     fillDPerm<<<1, 0x400>>>(dPerm, seed1, seed2);
-    fillDData<<<0x400000, 0x400>>>(dData, dPerm, 8, 64, 2, 8, 0.5);
+    fillDData<<<0x400000, 0x400>>>(dData, dPerm, 8, 32, 2, 0.7);
     
     checkCudaStatus(cudaMemcpy(hData, dData, 0x100000000 * sizeof(uint8_t), cudaMemcpyDeviceToHost));
     

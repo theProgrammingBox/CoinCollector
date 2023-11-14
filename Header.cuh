@@ -152,7 +152,7 @@ __device__ float func(float x) {
     return 1.3 * x / (x + 0.3);
 }
 
-__global__ void fillDData(uint8_t *dData, const uint16_t *perm, const uint8_t octaves, const float initFrequency, const float frequencyCoef, const float initPersistence, const float persistenceCoef) {
+__global__ void fillDData(uint8_t *dData, const uint16_t *perm, const uint8_t octaves, const float initFrequency, const float frequencyCoef, const float persistenceCoef) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     float cosx, sinx, cosy, siny;
     sincosf((idx & 0xFFFF) * norm16, &sinx, &cosx);
@@ -161,7 +161,7 @@ __global__ void fillDData(uint8_t *dData, const uint16_t *perm, const uint8_t oc
     float sum = 0;
     float maxAmp = 0;
     float frequency = initFrequency;
-    float persistence = initPersistence;
+    float persistence = 1;
     for (uint8_t i = 0; i < octaves; i++) {
         sum += noise4d(perm + i * 256, cosx * frequency, sinx * frequency, cosy * frequency, siny * frequency) * persistence;
         maxAmp += persistence;
