@@ -1,57 +1,83 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <time.h>
+#include <sys/time.h>
 
 #include "Header.cuh"
 
-uint32_t rand32(uint32_t* seed) {
-    *seed ^= *seed >> 16;
-    *seed *= 0xBAC57D37;
-    *seed ^= *seed >> 16;
-    *seed *= 0x24F66AC9;
-    return *seed;
+inline void checkCudaStatus(cudaError_t status) {
+    if (status != cudaSuccess) {
+        printf("cuda API failed with status %d: %s\n", status, cudaGetErrorString(status));
+        exit(-1);
+    }
 }
 
-void printDeviceTensor16(const uint16_t *d_data, uint32_t size) {
-    uint16_t *h_data = (uint16_t *) malloc(size * sizeof(uint16_t));
-    checkCudaStatus(cudaMemcpy(h_data, d_data, size * sizeof(uint16_t), cudaMemcpyDeviceToHost));
-    for (uint32_t i = 0; i < size; i++) {
-        printf("%d ", h_data[i]);
+void fillSeeds(uint32_t *seed1, uint32_t *seed2) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    *seed1 = tv.tv_sec ^ 0xd083b1c1;
+    *seed2 = tv.tv_usec ^ 0xae1233fd;
+    for (int i = 8; i--;) {
+        *seed2 *= 0xbf324c81;
+        *seed1 ^= *seed2;
+        *seed1 *= 0x9c7493ad;
+        *seed2 ^= *seed1;
     }
-    printf("\n\n");
-    free(h_data);
 }
 
-void printDeviceTensor8(const uint8_t *d_data, uint32_t size) {
-    uint8_t *h_data = (uint8_t *) malloc(size * sizeof(uint8_t));
-    checkCudaStatus(cudaMemcpy(h_data, d_data, size * sizeof(uint8_t), cudaMemcpyDeviceToHost));
-    for (uint32_t i = 0; i < size; i++) {
-        printf("%d ", (int8_t)h_data[i]);
-    }
-    printf("\n\n");
-    free(h_data);
+void fillHData(uint8_t *hData, const uint32_t seed1, const uint32_t seed2) {
+    uint16_t *dPerm;
+    uint8_t *dData;
+    
+    checkCudaStatus(cudaMalloc((void**)&dPerm, 0x400 * sizeof(uint16_t)));
+    checkCudaStatus(cudaMalloc((void**)&dData, 0x100000000 * sizeof(uint8_t)));
+    
+    fillDPerm<<<1, 0x400>>>(dPerm, seed1, seed2);
+    fillDData<<<0x400000, 0x400>>>(dData, dPerm, 8, 64, 2, 8, 0.5);
+    
+    checkCudaStatus(cudaMemcpy(hData, dData, 0x100000000 * sizeof(uint8_t), cudaMemcpyDeviceToHost));
+    
+    checkCudaStatus(cudaFree(dPerm));
+    checkCudaStatus(cudaFree(dData));
 }
 
 int main() {
-    uint32_t seed = time(NULL);
-    for (uint8_t i = 16; i--;) rand32(&seed);
+    uint32_t seed1, seed2;
+    fillSeeds(&seed1, &seed2);
     
-    uint16_t permSize = 256;
-    uint64_t size = 0x100000000;
+    uint8_t *hData = (uint8_t*)malloc(0x100000000 * sizeof(uint8_t));
+    fillHData(hData, seed1, seed2);
     
-    uint16_t *d_perm;
-    uint8_t *d_data;
+    const uint8_t VIEW_RADIUS = 16;
+    const uint8_t VIEW_SIZE = VIEW_RADIUS * 2 + 1;
     
-    checkCudaStatus(cudaMalloc((void**)&d_perm, permSize * sizeof(uint16_t)));
-    checkCudaStatus(cudaMalloc((void**)&d_data, size * sizeof(uint8_t)));
+    uint16_t x = 0, y = 0;
+    uint8_t move;
     
-    fillTensor<<<1, 256>>>(d_perm, seed);
-    test<<<size >> 10, 1024>>>(d_data, d_perm);
+    while(1) {
+        system("clear");
+        for (uint16_t i = VIEW_SIZE, ry = y + VIEW_RADIUS; i--; ry--) {
+            for (uint16_t j = VIEW_SIZE, rx = x + VIEW_RADIUS; j--; rx--) {
+                switch (hData[(uint32_t)ry << 16 | rx]) {
+                    case 0: printf("\x1b[38;2;040;150;160m..\x1b[0m"); break;
+                    case 1: printf("\x1b[38;2;050;190;170m--\x1b[0m"); break;
+                    case 2: printf("\x1b[38;2;140;210;210m;;\x1b[0m"); break;
+                    case 3: printf("\x1b[38;2;230;220;210m==\x1b[0m"); break;
+                    case 4: printf("\x1b[38;2;200;170;140m**\x1b[0m"); break;
+                    case 5: printf("\x1b[38;2;090;190;090m++\x1b[0m"); break;
+                    case 6: printf("\x1b[38;2;040;120;040m##\x1b[0m"); break;
+                    case 7: printf("\x1b[38;2;000;060;010m@@\x1b[0m"); break;
+                }
+            }
+            printf("\n");
+        }
+
+        printf("Move (wasd): ");
+        scanf(" %c", &move);
+
+        x += ((move == 'a') - (move == 'd')) * 16;
+        y += ((move == 'w') - (move == 's')) * 16;
+    }
     
-    printDeviceTensor16(d_perm, 256);
-    printDeviceTensor8(d_data, 256);
-    
-    checkCudaStatus(cudaFree(d_data));
-    checkCudaStatus(cudaFree(d_perm));
+    free(hData);
     return 0;
 }
