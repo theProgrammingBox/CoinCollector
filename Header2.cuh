@@ -1,12 +1,5 @@
 #include <stdint.h>
 
-inline void checkCudaStatus(cudaError_t status) {
-    if (status != cudaSuccess) {
-        printf("cuda API failed with status %d: %s\n", status, cudaGetErrorString(status));
-        exit(-1);
-    }
-}
-
 __global__ void fillDPerm(uint16_t *perm, uint32_t seed) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 	seed ^= idx;
@@ -30,17 +23,7 @@ __device__ float grad4(uint8_t hash, float x, float y, float z, float w) {
 #define G4 0.138196601
 #define FASTFLOOR(x) ( ((int)(x)<=(x)) ? ((int)x) : (((int)x)-1) )
 
-__global__ void fillDData(uint8_t *dData, const uint16_t *perm) {
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    float cosx, sinx, cosy, siny;
-    sincosf((idx & 0xFFFF) * norm16, &sinx, &cosx);
-    sincosf((idx >> 16) * norm16, &siny, &cosy);
-    
-    float x = cosx * 800;
-    float y = sinx * 800;
-    float z = cosy * 800;
-    float w = siny * 800;
-    
+__device__ float noise4d(const uint16_t *perm, const float x, const float y, const float z, const float w) {
     float n0, n1, n2, n3, n4;
     
     float s = (x + y + z + w) * F4;
@@ -65,8 +48,14 @@ __global__ void fillDData(uint8_t *dData, const uint16_t *perm) {
     float z0 = z - Z0;
     float w0 = w - W0;
     
-    uint8_t c = uint8_t(x0 > y0) << 5 | uint8_t(x0 > z0) << 4 | uint8_t(y0 > z0) << 3 | uint8_t(x0 > w0) << 2 | uint8_t(y0 > w0) << 1 | uint8_t(z0 > w0);
-    
+    int c1 = (x0 > y0) ? 32 : 0;
+    int c2 = (x0 > z0) ? 16 : 0;
+    int c3 = (y0 > z0) ? 8 : 0;
+    int c4 = (x0 > w0) ? 4 : 0;
+    int c5 = (y0 > w0) ? 2 : 0;
+    int c6 = (z0 > w0) ? 1 : 0;
+    int c = c1 + c2 + c3 + c4 + c5 + c6;
+        
     uint8_t i1, j1, k1, l1;
     uint8_t i2, j2, k2, l2;
     uint8_t i3, j3, k3, l3;
@@ -156,5 +145,19 @@ __global__ void fillDData(uint8_t *dData, const uint16_t *perm) {
         n4 = t4 * t4 * grad4(perm[ii + 1 + perm[jj + 1 + perm[kk + 1 + perm[ll + 1]]]], x4, y4, z4, w4);
     }
     
-    dData[idx] = (62.0f * (n0 + n1 + n2 + n3 + n4) + 1.0f) * 4;
+    return 62.0f * (n0 + n1 + n2 + n3 + n4);
+}
+
+__global__ void fillDData(uint8_t *dData, const uint16_t *perm) {
+    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    float cosx, sinx, cosy, siny;
+    sincosf((idx & 0xFFFF) * norm16, &sinx, &cosx);
+    sincosf((idx >> 16) * norm16, &siny, &cosy);
+    
+    float x = cosx * 2000;
+    float y = sinx * 2000;
+    float z = cosy * 2000;
+    float w = siny * 2000;
+    
+    dData[idx] = noise4d(perm, x, y, z, w) * 4 + 4;
 }

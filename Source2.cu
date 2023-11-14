@@ -4,20 +4,11 @@
 
 #include "Header2.cuh"
 
-void printD16(const uint16_t *dData, uint32_t size) {
-    uint16_t *hData = (uint16_t*)malloc(size * sizeof(uint16_t));
-    checkCudaStatus(cudaMemcpy(hData, dData, size * sizeof(uint16_t), cudaMemcpyDeviceToHost));
-    for (uint32_t i = 0; i < size; i++) printf("%d ", hData[i]);
-    printf("\n\n");
-    free(hData);
-}
-
-void printD8(const uint8_t *dData, uint32_t size) {
-    uint8_t *hData = (uint8_t*)malloc(size * sizeof(uint8_t));
-    checkCudaStatus(cudaMemcpy(hData, dData, size * sizeof(uint8_t), cudaMemcpyDeviceToHost));
-    for (uint32_t i = 0; i < size; i++) printf("%d ", hData[i]);
-    printf("\n\n");
-    free(hData);
+inline void checkCudaStatus(cudaError_t status) {
+    if (status != cudaSuccess) {
+        printf("cuda API failed with status %d: %s\n", status, cudaGetErrorString(status));
+        exit(-1);
+    }
 }
 
 int main() {
@@ -35,16 +26,13 @@ int main() {
     uint8_t *dData;
     uint8_t *hData = (uint8_t*)malloc(0x100000000 * sizeof(uint8_t));
     
-    checkCudaStatus(cudaMalloc((void**)&dPerm, 0x100 * sizeof(uint16_t)));
+    checkCudaStatus(cudaMalloc((void**)&dPerm, 0x400 * sizeof(uint16_t)));
     checkCudaStatus(cudaMalloc((void**)&dData, 0x100000000 * sizeof(uint8_t)));
     
-    fillDPerm<<<1, 0x100>>>(dPerm, seed);
+    fillDPerm<<<1, 0x400>>>(dPerm, seed);
     fillDData<<<0x400000, 0x400>>>(dData, dPerm);
     
     checkCudaStatus(cudaMemcpy(hData, dData, 0x100000000 * sizeof(uint8_t), cudaMemcpyDeviceToHost));
-    
-    printD16(dPerm, 0x100);
-    printD8(dData, 0x100);
     
     checkCudaStatus(cudaFree(dPerm));
     checkCudaStatus(cudaFree(dData));
@@ -62,16 +50,15 @@ int main() {
         for (uint16_t i = VIEW_SIZE, ry = y + VIEW_RADIUS; i--; ry--) {
             for (uint16_t j = VIEW_SIZE, rx = x + VIEW_RADIUS; j--; rx--) {
                 switch (hData[(uint32_t)ry << 16 | rx]) {
-                    case 0: printf("\x1b[38;2;000;000;139m..\x1b[0m"); break;
-                    case 1: printf("\x1b[38;2;000;105;148m--\x1b[0m"); break;
-                    case 2: printf("\x1b[38;2;173;216;230m;;\x1b[0m"); break;
-                    case 3: printf("\x1b[38;2;194;178;128m==\x1b[0m"); break;
-                    case 4: printf("\x1b[38;2;155;118;083m**\x1b[0m"); break;
-                    case 5: printf("\x1b[38;2;100;200;100m++\x1b[0m"); break;
-                    case 6: printf("\x1b[38;2;010;120;010m##\x1b[0m"); break;
-                    case 7: printf("\x1b[38;2;000;080;000m@@\x1b[0m"); break;
+                    case 0: printf("\x1b[38;2;040;150;160m..\x1b[0m"); break;
+                    case 1: printf("\x1b[38;2;050;190;170m--\x1b[0m"); break;
+                    case 2: printf("\x1b[38;2;140;210;210m;;\x1b[0m"); break;
+                    case 3: printf("\x1b[38;2;230;220;210m==\x1b[0m"); break;
+                    case 4: printf("\x1b[38;2;200;170;140m**\x1b[0m"); break;
+                    case 5: printf("\x1b[38;2;090;190;090m++\x1b[0m"); break;
+                    case 6: printf("\x1b[38;2;040;140;080m##\x1b[0m"); break;
+                    case 7: printf("\x1b[38;2;000;080;030m@@\x1b[0m"); break;
                 }
-                // printf("\x1b[38;2;000;000;139m..\x1b[0m");
             }
             printf("\n");
         }
