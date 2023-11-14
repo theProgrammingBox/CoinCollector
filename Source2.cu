@@ -14,12 +14,13 @@ inline void checkCudaStatus(cudaError_t status) {
 int main() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    uint32_t seed = tv.tv_sec ^ tv.tv_usec ^ 0x85f35457;
+    uint32_t seed1 = tv.tv_sec ^ 0xd083b1c1;
+    uint32_t seed2 = tv.tv_usec ^ 0xae1233fd;
     for (int i = 8; i--;) {
-        seed *= 0xBAC57D37;
-        seed ^= seed << 13;
-        seed *= 0x24F66AC9;
-        seed ^= seed >> 17;
+        seed2 *= 0xbf324c81;
+        seed1 ^= seed2;
+        seed1 *= 0x9c7493ad;
+        seed2 ^= seed1;
     }
     
     uint16_t *dPerm;
@@ -29,8 +30,8 @@ int main() {
     checkCudaStatus(cudaMalloc((void**)&dPerm, 0x400 * sizeof(uint16_t)));
     checkCudaStatus(cudaMalloc((void**)&dData, 0x100000000 * sizeof(uint8_t)));
     
-    fillDPerm<<<1, 0x400>>>(dPerm, seed);
-    fillDData<<<0x400000, 0x400>>>(dData, dPerm);
+    fillDPerm<<<1, 0x400>>>(dPerm, seed1, seed2);
+    fillDData<<<0x400000, 0x400>>>(dData, dPerm, 1000);
     
     checkCudaStatus(cudaMemcpy(hData, dData, 0x100000000 * sizeof(uint8_t), cudaMemcpyDeviceToHost));
     

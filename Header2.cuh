@@ -1,14 +1,14 @@
 #include <stdint.h>
 
-__global__ void fillDPerm(uint16_t *perm, uint32_t seed) {
+__global__ void fillDPerm(uint16_t *perm, uint32_t seed1, uint32_t seed2) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-	seed ^= idx;
-    seed ^= seed << 13;
-    seed *= 0xBAC57D37;
-    seed ^= seed >> 17;
-    seed *= 0x24F66AC9;
-    seed ^= seed << 5;
-    perm[idx] = seed & 0x1F;
+	seed1 ^= idx;
+    seed1 ^= seed1 << 13;
+    seed1 *= 0x4ba1bb47;
+    seed1 ^= seed2;
+    seed1 *= 0xb7ebcb79;
+    seed1 ^= seed1 >> 17;
+    perm[idx] = seed1 & 0x1F;
 }
 
 __device__ float grad4(uint8_t hash, float x, float y, float z, float w) {
@@ -21,7 +21,7 @@ __device__ float grad4(uint8_t hash, float x, float y, float z, float w) {
 #define norm16 0.00009587379924285
 #define F4 0.309016994
 #define G4 0.138196601
-#define FASTFLOOR(x) ( ((int)(x)<=(x)) ? ((int)x) : (((int)x)-1) )
+#define FASTFLOOR(x) ( ((int32_t)(x)<=(x)) ? ((int32_t)x) : (((int32_t)x)-1) )
 
 __device__ float noise4d(const uint16_t *perm, const float x, const float y, const float z, const float w) {
     float n0, n1, n2, n3, n4;
@@ -148,16 +148,21 @@ __device__ float noise4d(const uint16_t *perm, const float x, const float y, con
     return 62.0f * (n0 + n1 + n2 + n3 + n4);
 }
 
-__global__ void fillDData(uint8_t *dData, const uint16_t *perm) {
+__device__ float func(float x) {
+    return 1.3 * x / (x + 0.3);
+}
+
+__global__ void fillDData(uint8_t *dData, const uint16_t *perm, const float zoom) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     float cosx, sinx, cosy, siny;
     sincosf((idx & 0xFFFF) * norm16, &sinx, &cosx);
     sincosf((idx >> 16) * norm16, &siny, &cosy);
     
-    float x = cosx * 2000;
-    float y = sinx * 2000;
-    float z = cosy * 2000;
-    float w = siny * 2000;
-    
-    dData[idx] = noise4d(perm, x, y, z, w) * 4 + 4;
+    float sum = 0;
+    sum += noise4d(perm, cosx * zoom, sinx * zoom, cosy * zoom, siny * zoom) * 8;
+    sum += noise4d(perm + 256, cosx * zoom * 2, sinx * zoom * 2, cosy * zoom * 2, siny * zoom * 2) * 4;
+    sum += noise4d(perm + 512, cosx * zoom * 4, sinx * zoom * 4, cosy * zoom * 4, siny * zoom * 4) * 2;
+    sum += noise4d(perm + 768, cosx * zoom * 8, sinx * zoom * 8, cosy * zoom * 8, siny * zoom * 8);
+    sum /= 15;
+    dData[idx] = (sum < 0 ? -func(-sum) : func(sum)) * 4 + 4;
 }
