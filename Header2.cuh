@@ -36,10 +36,10 @@ __global__ void fillDData(uint8_t *dData, const uint16_t *perm) {
     sincosf((idx & 0xFFFF) * norm16, &sinx, &cosx);
     sincosf((idx >> 16) * norm16, &siny, &cosy);
     
-    float x = cosx * 200;
-    float y = sinx * 200;
-    float z = cosy * 200;
-    float w = siny * 200;
+    float x = cosx * 800;
+    float y = sinx * 800;
+    float z = cosy * 800;
+    float w = siny * 800;
     
     float n0, n1, n2, n3, n4;
     
