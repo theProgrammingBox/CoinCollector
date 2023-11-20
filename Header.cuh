@@ -8,10 +8,11 @@ __global__ void fillDPerm(uint16_t *perm, uint32_t seed1, uint32_t seed2) {
     seed1 ^= seed2;
     seed1 *= 0xb7ebcb79;
     seed1 ^= seed1 >> 17;
-    perm[idx] = seed1 & 0x1F;
+    perm[idx] = seed1;
 }
 
 __device__ float grad4(uint8_t hash, float x, float y, float z, float w) {
+    hash &= 0x1F;
     float u = hash < 24 ? x : y;
     float v = hash < 16 ? y : z;
     float s = hash < 8 ? z : w;
