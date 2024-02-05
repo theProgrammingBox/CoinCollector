@@ -1,13 +1,11 @@
 #include <stdint.h>
 
-__global__ void fillDPerm(uint16_t *perm, uint32_t seed1, uint32_t seed2) {
+__global__ void fillDPerm(uint8_t *perm, uint32_t seed1, uint32_t seed2) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-	seed1 ^= idx;
-    seed1 ^= seed1 << 13;
+	seed1 ^= idx ^ 0x9c7493ad;
     seed1 *= 0x4ba1bb47;
-    seed1 ^= seed2;
+    seed1 ^= seed2 ^ 0xbf324c81;
     seed1 *= 0xb7ebcb79;
-    seed1 ^= seed1 >> 17;
     perm[idx] = seed1;
 }
 
@@ -24,7 +22,7 @@ __device__ float grad4(uint8_t hash, float x, float y, float z, float w) {
 #define G4 0.138196601
 #define FASTFLOOR(x) ( ((int32_t)(x)<=(x)) ? ((int32_t)x) : (((int32_t)x)-1) )
 
-__device__ float noise4d(const uint16_t *perm, const float x, const float y, const float z, const float w) {
+__device__ float noise4d(const uint8_t *perm, const float x, const float y, const float z, const float w) {
     float n0, n1, n2, n3, n4;
     
     float s = (x + y + z + w) * F4;
@@ -153,7 +151,7 @@ __device__ float func(float x) {
     return 1.3 * x / (x + 0.3);
 }
 
-__global__ void fillDData(uint8_t *dData, const uint16_t *perm, const uint8_t octaves, const float initFrequency, const float frequencyCoef, const float persistenceCoef) {
+__global__ void fillDData(uint8_t *dData, const uint8_t *perm, const uint8_t octaves, const float initFrequency, const float frequencyCoef, const float persistenceCoef) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     float cosx, sinx, cosy, siny;
     sincosf((idx & 0xFFFF) * norm16, &sinx, &cosx);

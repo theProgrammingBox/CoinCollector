@@ -4,22 +4,6 @@
 
 #include "Header.cuh"
 
-/*
-- 32 bits may be too big as you need over 3 million agents to fill in density
-    - for 16 bits by 16 bits, 64 agents is good enough
-    - also, more proccessing for more map octaves
-- alter map height decision for "regions"
-- agents can spend a bit of energy to reserve extra awarness frames where they can see the screen n more times taking up exponentially more energy
-    - then if agents choose, they can make actions for each frame but it takes up a lot more energy than reserving the frames
-    - basically it is a board game, but the turn doesn't end until the agent chooses to end it at the cost of a lot of energy
-    - normally you would see agents move one tile at a time, but if they reserve frames, they can move multiple tiles at a time in one turn
-    - a way of allowing more dynamic and self stabilizing behavior if certain parameters are exploited
-- each herbivore agent needs to eat greens, breath air, heal, and drink water
-- each carnivore agent needs to eat herbivores, breath air, heal, and drink water
-- all agents can dive, they will look like deep water if so.
-
-- make a test agent for the user to control first
-*/
 
 inline void checkCudaStatus(cudaError_t status) {
     if (status != cudaSuccess) {
@@ -28,28 +12,30 @@ inline void checkCudaStatus(cudaError_t status) {
     }
 }
 
+void mixSeed(uint32_t *seed1, uint32_t *seed2) {
+    *seed2 *= 0xbf324c81;
+    *seed1 ^= *seed2 ^ 0x4ba1bb47;
+    *seed1 *= 0x9c7493ad;
+    *seed2 ^= *seed1 ^ 0xb7ebcb79;
+}
+
 void fillSeeds(uint32_t *seed1, uint32_t *seed2) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    *seed1 = tv.tv_sec ^ 0xd083b1c1;
-    *seed2 = tv.tv_usec ^ 0xae1233fd;
-    for (int i = 8; i--;) {
-        *seed2 *= 0xbf324c81;
-        *seed1 ^= *seed2;
-        *seed1 *= 0x9c7493ad;
-        *seed2 ^= *seed1;
-    }
+    *seed1 = tv.tv_sec;
+    *seed2 = tv.tv_usec;
+    for (uint8_t i = 8; i--;) mixSeed(seed1, seed2);
 }
 
 void fillHData(uint8_t *hData, const uint32_t seed1, const uint32_t seed2) {
-    uint16_t *dPerm;
+    uint8_t *dPerm;
     uint8_t *dData;
     
-    checkCudaStatus(cudaMalloc((void**)&dPerm, 0x400 * sizeof(uint16_t)));
+    checkCudaStatus(cudaMalloc((void**)&dPerm, 0x400 * sizeof(uint8_t)));
     checkCudaStatus(cudaMalloc((void**)&dData, 0x100000000 * sizeof(uint8_t)));
     
     fillDPerm<<<1, 0x400>>>(dPerm, seed1, seed2);
-    fillDData<<<0x400000, 0x400>>>(dData, dPerm, 8, 32, 2, 0.7);
+    fillDData<<<0x400000, 0x400>>>(dData, dPerm, 1, 2048, 8, 0.5);
     
     checkCudaStatus(cudaMemcpy(hData, dData, 0x100000000 * sizeof(uint8_t), cudaMemcpyDeviceToHost));
     
