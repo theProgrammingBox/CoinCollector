@@ -109,25 +109,15 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
     _reluBackward<<<(size >> 10) + (size & 0x3ff), 0x400>>>(dTensor, dTensorGrad, size);
 }
 
-__global__ void _add(float *dTensor, float *tensor2, uint32_t size, float alpha) {
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= size) return;
-    dTensor[idx] += tensor2[idx] * alpha;
+
+__global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
+    uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size) {
+        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index];
+        else arr[index] += arrGrad[index] * scalar;
+    }
 }
 
-void add(float *dTensor, float *tensor2, uint32_t size, float alpha) {
-    _add<<<(size >> 10) + (size & 0x3ff), 0x400>>>(dTensor, tensor2, size, alpha);
-}
-
-__global__ void __mul(float *dTensor, float *tensor2, uint32_t size) {
-    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= size) return;
-    dTensor[idx] *= tensor2[idx];
-}
-
-void mul(float *dTensor, float *tensor2, uint32_t size) {
-    __mul<<<(size >> 10) + (size & 0x3ff), 0x400>>>(dTensor, tensor2, size);
-}
 
 struct Model {
     // mean, variance, and sample noise for weights and biases
@@ -157,13 +147,6 @@ struct Model {
     
     float* weight1Grad;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
     float* weight2Grad;//[HIDDEN_LAYER_SIZE * ACTIONS];
-    float* bias1Grad;//[HIDDEN_LAYER_SIZE];
-    float* bias2Grad;//[ACTIONS];
-    
-    float* weight1VarGrad;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
-    float* weight2VarGrad;//[HIDDEN_LAYER_SIZE * ACTIONS];
-    float* bias1VarGrad;//[HIDDEN_LAYER_SIZE];
-    float* bias2VarGrad;//[ACTIONS];
     
     float* hiddenGrad;//[HIDDEN_LAYER_SIZE * MAX_BATCH_SIZE];
     float* outputGrad;//[BOARD_SIZE * MAX_BATCH_SIZE];
@@ -194,15 +177,16 @@ void initializeModel(Model *model, uint32_t* seed1, uint32_t* seed2) {
     cudaMalloc((void**)&model->hidden, HIDDEN_LAYER_SIZE * MAX_BATCH_SIZE * sizeof(float));
     cudaMalloc((void**)&model->output, ACTIONS * MAX_BATCH_SIZE * sizeof(float));
     
+    cudaMalloc((void**)&model->weight1Grad, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->weight2Grad, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    
+    cudaMalloc((void**)&model->hiddenGrad, HIDDEN_LAYER_SIZE * MAX_BATCH_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->outputGrad, BOARD_SIZE * MAX_BATCH_SIZE * sizeof(float));
+    
     fillUniform(model->weight1, BOARD_SIZE * HIDDEN_LAYER_SIZE, seed1, seed2, -0.2, 0.2);
     fillUniform(model->weight2, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2, -0.2, 0.2);
     fillUniform(model->bias1, HIDDEN_LAYER_SIZE, seed1, seed2, -0.1, 0.1);
     fillUniform(model->bias2, ACTIONS, seed1, seed2, -0.1, 0.1);
-    
-    // fillUniform(model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, seed1, seed2, 0, 1);
-    // fillUniform(model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2, 0, 1);
-    // fillUniform(model->bias1Var, HIDDEN_LAYER_SIZE, seed1, seed2, 0, 1);
-    // fillUniform(model->bias2Var, ACTIONS, seed1, seed2, 0, 1);
     
     fill(model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, 0.4);
     fill(model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, 0.4);
@@ -252,60 +236,36 @@ void forward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
     const float ONE = 1;
     const float ZERO = 0;
     
+    cudaMemcpy(model->hidden, model->bias1, HIDDEN_LAYER_SIZE * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_N,
         HIDDEN_LAYER_SIZE, batchSize, BOARD_SIZE,
         &ONE,
         model->newWeight1, HIDDEN_LAYER_SIZE,
         model->input, BOARD_SIZE,
-        &ZERO,
+        &ONE,
         model->hidden, HIDDEN_LAYER_SIZE
     );
     
-    // cublasSgeam(
-    //     *handle, CUBLAS_OP_N, CUBLAS_OP_N,
-    //     HIDDEN_LAYER_SIZE, batchSize,
-    //     &ONE,
-    //     model->hidden, HIDDEN_LAYER_SIZE,
-    //     &ONE,
-    //     model->bias1, HIDDEN_LAYER_SIZE,
-    //     model->hidden, HIDDEN_LAYER_SIZE
-    // );
-    
-    add(model->hidden, model->bias1, HIDDEN_LAYER_SIZE * batchSize, ONE);
-    
     reluForward(model->hidden, HIDDEN_LAYER_SIZE * batchSize);
-    
+    cudaMemcpy(model->output, model->bias2, ACTIONS * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_N,
         ACTIONS, batchSize, HIDDEN_LAYER_SIZE,
         &ONE,
         model->newWeight2, ACTIONS,
         model->hidden, HIDDEN_LAYER_SIZE,
-        &ZERO,
+        &ONE,
         model->output, ACTIONS
     );
-    
-    // cublasSgeam(
-    //     *handle, CUBLAS_OP_N, CUBLAS_OP_N,
-    //     ACTIONS, batchSize,
-    //     &ONE,
-    //     model->output, ACTIONS,
-    //     &ONE,
-    //     model->bias2, ACTIONS,
-    //     model->output, ACTIONS
-    // );
-    
-    add(model->output, model->bias2, ACTIONS * batchSize, ONE);
 }
 
 void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
     const float ONE = 1;
     const float ZERO = 0;
     
-    cudaMemcpy(model->bias2Grad, model->outputGrad, ACTIONS * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    cudaMemcpy(model->bias2VarGrad, model->bias2Grad, ACTIONS * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    mul(model->bias2VarGrad, model->bias2Sample, ACTIONS * batchSize);
+    add(model->bias2, model->outputGrad, LEARNING_RATE, NULL, ACTIONS * batchSize);
+    add(model->bias2Var, model->outputGrad, LEARNING_RATE, model->bias2Sample, ACTIONS * batchSize);
     
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_T,
@@ -317,11 +277,8 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
         model->weight2Grad, ACTIONS
     );
     
-    add(model->weight2, model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, LEARNING_RATE);
-    
-    cudaMemcpy(model->weight2VarGrad, model->weight2Grad, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float), cudaMemcpyDeviceToDevice);
-    mul(model->weight2VarGrad, model->weight2Sample, HIDDEN_LAYER_SIZE * ACTIONS);
-    add(model->weight2Var, model->weight2VarGrad, HIDDEN_LAYER_SIZE * ACTIONS, LEARNING_RATE);
+    add(model->weight2, model->weight2Grad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * ACTIONS);
+    add(model->weight2Var, model->weight2Grad, LEARNING_RATE, model->weight2Sample, HIDDEN_LAYER_SIZE * ACTIONS);
     
     cublasSgemm(
         *handle, CUBLAS_OP_T, CUBLAS_OP_N,
@@ -334,12 +291,8 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
     );
     
     reluBackward(model->hidden, model->hiddenGrad, HIDDEN_LAYER_SIZE * batchSize);
-    
-    cudaMemcpy(model->bias1Grad, model->hiddenGrad, HIDDEN_LAYER_SIZE * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    add(model->bias1, model->bias1Grad, HIDDEN_LAYER_SIZE, LEARNING_RATE);
-    cudaMemcpy(model->bias1VarGrad, model->bias1Grad, HIDDEN_LAYER_SIZE * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    mul(model->bias1VarGrad, model->bias1Sample, HIDDEN_LAYER_SIZE * batchSize);
-    add(model->bias1Var, model->bias1VarGrad, HIDDEN_LAYER_SIZE, LEARNING_RATE);
+    add(model->bias1, model->hiddenGrad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * batchSize);
+    add(model->bias1Var, model->hiddenGrad, LEARNING_RATE, model->bias1Sample, HIDDEN_LAYER_SIZE * batchSize);
     
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_T,
@@ -351,11 +304,8 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
         model->weight1Grad, HIDDEN_LAYER_SIZE
     );
     
-    add(model->weight1, model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, LEARNING_RATE);
-    
-    cudaMemcpy(model->weight1VarGrad, model->weight1Grad, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float), cudaMemcpyDeviceToDevice);
-    mul(model->weight1VarGrad, model->weight1Sample, BOARD_SIZE * HIDDEN_LAYER_SIZE);
-    add(model->weight1Var, model->weight1VarGrad, BOARD_SIZE * HIDDEN_LAYER_SIZE, LEARNING_RATE);
+    add(model->weight1, model->weight1Grad, LEARNING_RATE, NULL, BOARD_SIZE * HIDDEN_LAYER_SIZE);
+    add(model->weight1Var, model->weight1Grad, LEARNING_RATE, model->weight1Sample, BOARD_SIZE * HIDDEN_LAYER_SIZE);
 }
 
 int main(int argc, char *argv[])
