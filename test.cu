@@ -306,10 +306,6 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
         &ZERO,
         model->weight2Grad, ACTIONS
     );
-    // // print weight2Grad
-    // printf("Weight2Grad:\n");
-    // printTensor(model->weight2Grad, HIDDEN_LAYER_SIZE, ACTIONS);
-    
     
     cublasSgemm(
         *handle, CUBLAS_OP_T, CUBLAS_OP_N,
@@ -333,14 +329,15 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
         model->weight1Grad, HIDDEN_LAYER_SIZE
     );
     
-    add(model->bias2, model->outputGrad, LEARNING_RATE, NULL, ACTIONS * batchSize);
-    add(model->bias2Var, model->outputGrad, LEARNING_RATE, model->bias2Sample, ACTIONS * batchSize);
     add(model->weight2, model->weight2Grad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * ACTIONS);
     add(model->weight2Var, model->weight2Grad, LEARNING_RATE, model->weight2Sample, HIDDEN_LAYER_SIZE * ACTIONS);
-    add(model->bias1, model->hiddenGrad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * batchSize);
-    add(model->bias1Var, model->hiddenGrad, LEARNING_RATE, model->bias1Sample, HIDDEN_LAYER_SIZE * batchSize);
     add(model->weight1, model->weight1Grad, LEARNING_RATE, NULL, BOARD_SIZE * HIDDEN_LAYER_SIZE);
     add(model->weight1Var, model->weight1Grad, LEARNING_RATE, model->weight1Sample, BOARD_SIZE * HIDDEN_LAYER_SIZE);
+    
+    add(model->bias2, model->outputGrad, LEARNING_RATE, NULL, ACTIONS);
+    add(model->bias2Var, model->outputGrad, LEARNING_RATE, model->bias2Sample, ACTIONS);
+    add(model->bias1, model->hiddenGrad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE);
+    add(model->bias1Var, model->hiddenGrad, LEARNING_RATE, model->bias1Sample, HIDDEN_LAYER_SIZE);
 }
 
 void printParams(Model *model) {
@@ -468,9 +465,9 @@ int main(int argc, char *argv[])
         }
         
         // unfreeze model every 16 epochs to prevent overestimation
-        if (epoch % 64 == 0) {
+        // if (epoch % 64 == 0) {
             copyParams(&model, &frozenModel);
-        }
+        // }
         forward(&handle, batchSize, &frozenModel, 0, NULL, NULL);
         cudaMemcpy(outputScores, frozenModel.output, batchSize * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         
