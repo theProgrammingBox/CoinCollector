@@ -63,11 +63,45 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
     _reluBackward<<<(size >> 10) + (size & 0x3ff), 0x400>>>(dTensor, dTensorGrad, size);
 }
 
+__global__ void _integratedAdamUpdate(float *dTensor, float *dTensorGrad, float *dTensorMean, float *dTensorVar, float betaMeanCor, float betaVarCor, float learningRate, uint32_t size) {
+    const float betaMean = 0.9f;
+    const float betaVar = 0.999f;
+    const float weightDecay = 0.0001f;
+    
+    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+    float grad = dTensorGrad[idx];
+    float mean = betaMean * dTensorMean[idx] + (1.0f - betaMean) * grad;
+    float var = betaVar * dTensorVar[idx] + (1.0f - betaVar) * grad * grad;
+    float meanCor = mean / (1.0f - betaMeanCor);
+    float varCor = var / (1.0f - betaVarCor);
+    dTensorMean[idx] = mean;
+    dTensorVar[idx] = var;
+    dTensor[idx] += learningRate * meanCor / (sqrtf(varCor) + 1e-8f);// - weightDecay * dTensor[idx]);
+}
+
+void integratedAdamUpdate(float *dTensor, float *dTensorGrad, float *dTensorMean, float *dTensorVar, float betaMeanCor, float betaVarCor, float learningRate, uint32_t size) {
+    _integratedAdamUpdate<<<(size >> 10) + (size & 0x3ff), 0x400>>>(dTensor, dTensorGrad, dTensorMean, dTensorVar, betaMeanCor, betaVarCor, learningRate, size);
+}
+
 struct Model {
+    float meanCorrected;
+    float varCorrected;
+    
     float* weight1;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
     float* weight2;//[HIDDEN_LAYER_SIZE * ACTIONS];
     float* bias1;//[HIDDEN_LAYER_SIZE];
     float* bias2;//[ACTIONS];
+    
+    float* weight1Mean;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
+    float* weight2Mean;//[HIDDEN_LAYER_SIZE * ACTIONS];
+    float* bias1Mean;//[HIDDEN_LAYER_SIZE];
+    float* bias2Mean;//[ACTIONS];
+    
+    float* weight1Var;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
+    float* weight2Var;//[HIDDEN_LAYER_SIZE * ACTIONS];
+    float* bias1Var;//[HIDDEN_LAYER_SIZE];
+    float* bias2Var;//[ACTIONS];
     
     float* input;//[BOARD_SIZE * NUM_FINAL_STATES];
     float* hidden;//[HIDDEN_LAYER_SIZE * NUM_FINAL_STATES];
@@ -81,10 +115,23 @@ struct Model {
 };
 
 void initializeModel(Model *model, uint32_t* seed1, uint32_t* seed2) {
+    model->meanCorrected = 1;
+    model->varCorrected = 1;
+    
     cudaMalloc((void**)&model->weight1, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
     cudaMalloc((void**)&model->weight2, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
     cudaMalloc((void**)&model->bias1, HIDDEN_LAYER_SIZE * sizeof(float));
     cudaMalloc((void**)&model->bias2, ACTIONS * sizeof(float));
+    
+    cudaMalloc((void**)&model->weight1Mean, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->weight2Mean, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    cudaMalloc((void**)&model->bias1Mean, HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->bias2Mean, ACTIONS * sizeof(float));
+    
+    cudaMalloc((void**)&model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    cudaMalloc((void**)&model->bias1Var, HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->bias2Var, ACTIONS * sizeof(float));
     
     cudaMalloc((void**)&model->input, BOARD_SIZE * NUM_FINAL_STATES * sizeof(float));
     cudaMalloc((void**)&model->hidden, HIDDEN_LAYER_SIZE * NUM_FINAL_STATES * sizeof(float));
@@ -100,6 +147,16 @@ void initializeModel(Model *model, uint32_t* seed1, uint32_t* seed2) {
     fillUniform(model->weight2, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2, -0.1, 0.1);
     fillUniform(model->bias1, HIDDEN_LAYER_SIZE, seed1, seed2, -0.1, 0.1);
     fillUniform(model->bias2, ACTIONS, seed1, seed2, -0.1, 0.1);
+    
+    cudaMemset(model->weight1Mean, 0, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMemset(model->weight2Mean, 0, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    cudaMemset(model->bias1Mean, 0, HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMemset(model->bias2Mean, 0, ACTIONS * sizeof(float));
+    
+    cudaMemset(model->weight1Var, 0, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMemset(model->weight2Var, 0, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    cudaMemset(model->bias1Var, 0, HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMemset(model->bias2Var, 0, ACTIONS * sizeof(float));
 }
 
 void forward(cublasHandle_t* handle, Model *model) {
@@ -135,7 +192,7 @@ void forward(cublasHandle_t* handle, Model *model) {
 }
 
 void backward(cublasHandle_t* handle, Model *model) {
-    const float learingRate = 0.00016;
+    const float learingRate = 0.001;
     const float ONE = 1;
     const float ZERO = 0;
     
@@ -171,10 +228,17 @@ void backward(cublasHandle_t* handle, Model *model) {
         model->weight1Grad, HIDDEN_LAYER_SIZE
     );
     
-    cublasSaxpy(*handle, HIDDEN_LAYER_SIZE * ACTIONS, &learingRate, model->weight2Grad, 1, model->weight2, 1);
-    cublasSaxpy(*handle, BOARD_SIZE * HIDDEN_LAYER_SIZE, &learingRate, model->weight1Grad, 1, model->weight1, 1);
-    cublasSaxpy(*handle, ACTIONS, &learingRate, model->outputGrad, 1, model->bias2, 1);
-    cublasSaxpy(*handle, HIDDEN_LAYER_SIZE, &learingRate, model->hiddenGrad, 1, model->bias1, 1);
+    // cublasSaxpy(*handle, HIDDEN_LAYER_SIZE * ACTIONS, &learingRate, model->weight2Grad, 1, model->weight2, 1);
+    // cublasSaxpy(*handle, BOARD_SIZE * HIDDEN_LAYER_SIZE, &learingRate, model->weight1Grad, 1, model->weight1, 1);
+    // cublasSaxpy(*handle, ACTIONS, &learingRate, model->outputGrad, 1, model->bias2, 1);
+    // cublasSaxpy(*handle, HIDDEN_LAYER_SIZE, &learingRate, model->hiddenGrad, 1, model->bias1, 1);
+    
+    model->meanCorrected *= 0.9;
+    model->varCorrected *= 0.999;
+    integratedAdamUpdate(model->weight2, model->weight2Grad, model->weight2Mean, model->weight2Var, model->meanCorrected, model->varCorrected, learingRate, HIDDEN_LAYER_SIZE * ACTIONS);
+    integratedAdamUpdate(model->weight1, model->weight1Grad, model->weight1Mean, model->weight1Var, model->meanCorrected, model->varCorrected, learingRate, BOARD_SIZE * HIDDEN_LAYER_SIZE);
+    integratedAdamUpdate(model->bias2, model->outputGrad, model->bias2Mean, model->bias2Var, model->meanCorrected, model->varCorrected, learingRate, ACTIONS);
+    integratedAdamUpdate(model->bias1, model->hiddenGrad, model->bias1Mean, model->bias1Var, model->meanCorrected, model->varCorrected, learingRate, HIDDEN_LAYER_SIZE);
 }
 
 void copyParams(Model *model, Model *frozenModel) {
@@ -265,7 +329,7 @@ int main(int argc, char *argv[])
     initializeModel(&model, &seed1, &seed2);
     initializeModel(&frozenModel, &seed1, &seed2);
     
-    for (uint32_t epoch = 0; epoch < (1 << 10); epoch++) {
+    for (uint32_t epoch = 0; epoch < (1 << 12); epoch++) {
         if (epoch % 8 == 0) {
             copyParams(&model, &frozenModel);
         }
@@ -286,7 +350,7 @@ int main(int argc, char *argv[])
         }
         float outputGrad[NUM_FINAL_STATES]{};
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
-            outputGrad[i * ACTIONS + actions[i]] = rewards[i] + DECAY * nextBestScore[i] - output[i * ACTIONS + actions[i]];
+            outputGrad[i * ACTIONS + actions[i]] = 0 - output[i * ACTIONS + actions[i]];
         }
         
         float maxScore = 0;
