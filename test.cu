@@ -501,30 +501,10 @@ int main(int argc, char *argv[])
         }
         // printf("\n");
         cudaMemcpy(model.outputGrad, outputGrad, batchSize * ACTIONS * sizeof(float), cudaMemcpyHostToDevice);
-        backward(&handle, batchSize, &model);
-        
-        
-            
-            // for (x = 0; x < 2; x++) {
-            //     for (y = 0; y < 2; y++) {
-            //         printf("%.0f ", queueInitState[tmp * BOARD_SIZE + x + y * 2]);
-            //     }
-            //     printf("\n");
-            // }
-            // printf("\n");
-            
-            // for (x = 0; x < 2; x++) {
-            //     for (y = 0; y < 2; y++) {
-            //         printf("%.0f ", queueResState[tmp * BOARD_SIZE + x + y * 2]);
-            //     }
-            //     printf("\n");
-            // }
-            
-            // printf("A: %d R: %.0f\n\n\n", queueAction[tmp], queueReward[tmp]);
+        if (epoch != EPOCHS - 1) {
+            backward(&handle, batchSize, &model);
+        }
     }
-    
-    // printParams(&model);
-    // return 0;
     
     // now run the model forever
     memset(board, 0, BOARD_SIZE * sizeof(float));
@@ -541,16 +521,18 @@ int main(int argc, char *argv[])
         printf("\033[H\033[J");
         
         cudaMemcpy(model.input, board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-        forward(&handle, 1, &frozenModel, 0, NULL, NULL);
+        forward(&handle, 1, &model, 1, &seed1, &seed2);
         cudaMemcpy(actions, model.output, ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         printf("Action scores: ");
         for (uint8_t i = 0; i < ACTIONS; i++) {
             printf("%f ", actions[i]);
         }
+        printf("\n");
         action = 0;
         for (uint8_t i = 1; i < ACTIONS; i++) {
             if (actions[i] > actions[action]) action = i;
         }
+        printf("Action: %d\n", action);
         // action = mixSeed(&seed1, &seed2) % ACTIONS;
         
         // apply action
