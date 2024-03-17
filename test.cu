@@ -6,12 +6,12 @@
 // #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-#define LEARNING_RATE 0.001
-#define DISCOUNT_FACTOR 0.9
-#define BOARD_WIDTH 2
-#define EPOCHS 10240
+#define LEARNING_RATE 0.0008
+#define DISCOUNT_FACTOR 0.95
+#define BOARD_WIDTH 3
+#define EPOCHS 32768
 #define QUEUE_LENGTH 1024
-#define MAX_BATCH_SIZE 64
+#define MAX_BATCH_SIZE 128
 #define HIDDEN_LAYER_SIZE 16
 #define ACTIONS 4
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
@@ -112,8 +112,8 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
 __global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
     uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) {
-        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.0001f;
-        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.0001f;
+        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.00008f;
+        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.00008f;
     }
 }
 
@@ -190,10 +190,10 @@ void initializeModel(Model *model, uint32_t* seed1, uint32_t* seed2) {
     fillUniform(model->bias1, HIDDEN_LAYER_SIZE, seed1, seed2, -0.1, 0.1);
     fillUniform(model->bias2, ACTIONS, seed1, seed2, -0.1, 0.1);
     
-    fill(model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, 0.1);
-    fill(model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, 0.1);
-    fill(model->bias1Var, HIDDEN_LAYER_SIZE, 0.1);
-    fill(model->bias2Var, ACTIONS, 0.1);
+    fill(model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, 0.2);
+    fill(model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, 0.2);
+    fill(model->bias1Var, HIDDEN_LAYER_SIZE, 0.2);
+    fill(model->bias2Var, ACTIONS, 0.2);
 }
 
 void newNoise(Model *model, uint32_t* seed1, uint32_t* seed2) {
@@ -382,17 +382,18 @@ int main(int argc, char *argv[])
     uint8_t x, y, cx, cy;
     uint8_t action;
     
+    memset(board, 0, BOARD_SIZE * sizeof(float));
+    x = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+    y = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+    do {
+        cx = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+        cy = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+    } while (x == cx && y == cy);
+    board[x + y * BOARD_WIDTH] = 1;
+    board[cx + cy * BOARD_WIDTH] = 2;
     for (uint32_t epoch = 0; epoch < EPOCHS; epoch++) {
         // reset, randomize, place player and coin on board, and store initial state
-        memset(board, 0, BOARD_SIZE * sizeof(float));
-        x = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
-        y = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
-        do {
-            cx = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
-            cy = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
-        } while (x == cx && y == cy);
-        board[x + y * BOARD_WIDTH] = 1;
-        board[cx + cy * BOARD_WIDTH] = 2;
+        
         memcpy(queueInitState + queueIndex * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
         
         // sample action using noisy dqn
@@ -507,6 +508,8 @@ int main(int argc, char *argv[])
     }
     
     // now run the model forever
+    uint32_t score = 0;
+    uint32_t steps = 0;
     memset(board, 0, BOARD_SIZE * sizeof(float));
     x = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
     y = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
@@ -522,6 +525,7 @@ int main(int argc, char *argv[])
         
         cudaMemcpy(model.input, board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
         forward(&handle, 1, &model, 1, &seed1, &seed2);
+        // forward(&handle, 1, &model, 0, NULL, NULL);
         cudaMemcpy(actions, model.output, ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         printf("Action scores: ");
         for (uint8_t i = 0; i < ACTIONS; i++) {
@@ -545,6 +549,7 @@ int main(int argc, char *argv[])
         }
         board[x + y * BOARD_WIDTH] = 1;
         
+        score += x == cx && y == cy;
         while (x == cx && y == cy) {
             cx = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
             cy = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
@@ -554,10 +559,12 @@ int main(int argc, char *argv[])
         uint8_t i, j;
         for (i = 0; i < BOARD_WIDTH; i++) {
             for (j = 0; j < BOARD_WIDTH; j++) {
-                printf("%.0f ", board[i + j * BOARD_WIDTH]);
+                printf("%.0f ", board[i * BOARD_WIDTH + j]);
             }
             printf("\n");
         }
+        steps++;
+        printf("After %d steps, score: %d\n", steps, score);
         
         struct timeval tv;
         tv.tv_sec = 0;// seconds
