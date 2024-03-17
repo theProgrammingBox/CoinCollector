@@ -6,10 +6,10 @@
 // #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-#define LEARNING_RATE 0.001
-#define DISCOUNT_FACTOR 0.99
+#define LEARNING_RATE 0.01
+#define DISCOUNT_FACTOR 0.9
 #define BOARD_WIDTH 2
-#define EPOCHS 4096
+#define EPOCHS 168
 #define QUEUE_LENGTH 1024
 #define MAX_BATCH_SIZE 64
 #define HIDDEN_LAYER_SIZE 16
@@ -112,8 +112,8 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
 __global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
     uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) {
-        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index];
-        else arr[index] += arrGrad[index] * scalar;
+        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.1f;
+        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.1f;
     }
 }
 
@@ -185,15 +185,15 @@ void initializeModel(Model *model, uint32_t* seed1, uint32_t* seed2) {
     cudaMalloc((void**)&model->hiddenGrad, HIDDEN_LAYER_SIZE * MAX_BATCH_SIZE * sizeof(float));
     cudaMalloc((void**)&model->outputGrad, BOARD_SIZE * MAX_BATCH_SIZE * sizeof(float));
     
-    fillUniform(model->weight1, BOARD_SIZE * HIDDEN_LAYER_SIZE, seed1, seed2, -0.2, 0.2);
-    fillUniform(model->weight2, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2, -0.2, 0.2);
+    fillUniform(model->weight1, BOARD_SIZE * HIDDEN_LAYER_SIZE, seed1, seed2, -0.1, 0.1);
+    fillUniform(model->weight2, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2, -0.1, 0.1);
     fillUniform(model->bias1, HIDDEN_LAYER_SIZE, seed1, seed2, -0.1, 0.1);
     fillUniform(model->bias2, ACTIONS, seed1, seed2, -0.1, 0.1);
     
-    fill(model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, 0.4);
-    fill(model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, 0.4);
-    fill(model->bias1Var, HIDDEN_LAYER_SIZE, 0.4);
-    fill(model->bias2Var, ACTIONS, 0.4);
+    fill(model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, 0.1);
+    fill(model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, 0.1);
+    fill(model->bias1Var, HIDDEN_LAYER_SIZE, 0.1);
+    fill(model->bias2Var, ACTIONS, 0.1);
 }
 
 void newNoise(Model *model, uint32_t* seed1, uint32_t* seed2) {
@@ -239,7 +239,7 @@ void forward(cublasHandle_t* handle, uint32_t batchSize, Model *model, uint8_t n
     const float ZERO = 0;
     
     float* weight1, *weight2, *bias1, *bias2;
-    if (noise) {
+    if (noise == 1) {
         newNoise(model, seed1, seed2);
         weight1 = model->newWeight1;
         weight2 = model->newWeight2;
@@ -252,7 +252,22 @@ void forward(cublasHandle_t* handle, uint32_t batchSize, Model *model, uint8_t n
         bias2 = model->bias2;
     }
     
-    cudaMemcpy(model->hidden, bias1, HIDDEN_LAYER_SIZE * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // if (noise == 0) {
+    // //print bias1
+    // printf("Bias1:\n");
+    // printTensor(bias1, 1, HIDDEN_LAYER_SIZE);
+    // }
+    
+    for (uint32_t i = 0; i < batchSize; i++) {
+        cudaMemcpy(model->hidden + i * HIDDEN_LAYER_SIZE, bias1, HIDDEN_LAYER_SIZE * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+    
+    // if (noise == 0) {
+    // // print hidden
+    // printf("Hidden:\n");
+    // printTensor(model->hidden, batchSize, HIDDEN_LAYER_SIZE);
+    // }
+    
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_N,
         HIDDEN_LAYER_SIZE, batchSize, BOARD_SIZE,
@@ -264,7 +279,9 @@ void forward(cublasHandle_t* handle, uint32_t batchSize, Model *model, uint8_t n
     );
     
     reluForward(model->hidden, HIDDEN_LAYER_SIZE * batchSize);
-    cudaMemcpy(model->output, bias2, ACTIONS * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    for (uint32_t i = 0; i < batchSize; i++) {
+        cudaMemcpy(model->output + i * ACTIONS, bias2, ACTIONS * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_N,
         ACTIONS, batchSize, HIDDEN_LAYER_SIZE,
@@ -280,9 +297,6 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
     const float ONE = 1;
     const float ZERO = 0;
     
-    add(model->bias2, model->outputGrad, LEARNING_RATE, NULL, ACTIONS * batchSize);
-    add(model->bias2Var, model->outputGrad, LEARNING_RATE, model->bias2Sample, ACTIONS * batchSize);
-    
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_T,
         ACTIONS, HIDDEN_LAYER_SIZE, batchSize,
@@ -292,9 +306,10 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
         &ZERO,
         model->weight2Grad, ACTIONS
     );
+    // // print weight2Grad
+    // printf("Weight2Grad:\n");
+    // printTensor(model->weight2Grad, HIDDEN_LAYER_SIZE, ACTIONS);
     
-    add(model->weight2, model->weight2Grad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * ACTIONS);
-    add(model->weight2Var, model->weight2Grad, LEARNING_RATE, model->weight2Sample, HIDDEN_LAYER_SIZE * ACTIONS);
     
     cublasSgemm(
         *handle, CUBLAS_OP_T, CUBLAS_OP_N,
@@ -307,8 +322,6 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
     );
     
     reluBackward(model->hidden, model->hiddenGrad, HIDDEN_LAYER_SIZE * batchSize);
-    add(model->bias1, model->hiddenGrad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * batchSize);
-    add(model->bias1Var, model->hiddenGrad, LEARNING_RATE, model->bias1Sample, HIDDEN_LAYER_SIZE * batchSize);
     
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_T,
@@ -320,6 +333,12 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
         model->weight1Grad, HIDDEN_LAYER_SIZE
     );
     
+    add(model->bias2, model->outputGrad, LEARNING_RATE, NULL, ACTIONS * batchSize);
+    add(model->bias2Var, model->outputGrad, LEARNING_RATE, model->bias2Sample, ACTIONS * batchSize);
+    add(model->weight2, model->weight2Grad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * ACTIONS);
+    add(model->weight2Var, model->weight2Grad, LEARNING_RATE, model->weight2Sample, HIDDEN_LAYER_SIZE * ACTIONS);
+    add(model->bias1, model->hiddenGrad, LEARNING_RATE, NULL, HIDDEN_LAYER_SIZE * batchSize);
+    add(model->bias1Var, model->hiddenGrad, LEARNING_RATE, model->bias1Sample, HIDDEN_LAYER_SIZE * batchSize);
     add(model->weight1, model->weight1Grad, LEARNING_RATE, NULL, BOARD_SIZE * HIDDEN_LAYER_SIZE);
     add(model->weight1Var, model->weight1Grad, LEARNING_RATE, model->weight1Sample, BOARD_SIZE * HIDDEN_LAYER_SIZE);
 }
@@ -331,6 +350,13 @@ void printParams(Model *model) {
     printTensor(model->bias2, 1, ACTIONS);
 }
 
+void copyParams(Model *model, Model *frozenModel) {
+    cudaMemcpy(frozenModel->weight1, model->weight1, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(frozenModel->weight2, model->weight2, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(frozenModel->bias1, model->bias1, HIDDEN_LAYER_SIZE * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(frozenModel->bias2, model->bias2, ACTIONS * sizeof(float), cudaMemcpyDeviceToDevice);
+}
+
 int main(int argc, char *argv[])
 {
     cublasHandle_t handle;
@@ -340,8 +366,9 @@ int main(int argc, char *argv[])
     uint32_t seed1, seed2;
     initializeSeeds(&seed1, &seed2);
     
-    Model model;
+    Model model, frozenModel;
     initializeModel(&model, &seed1, &seed2);
+    initializeModel(&frozenModel, &seed1, &seed2);
     
     uint32_t queueIndex = 0;
     float queueInitState[QUEUE_LENGTH * BOARD_SIZE]{};
@@ -351,13 +378,8 @@ int main(int argc, char *argv[])
     
     float actions[ACTIONS];
     uint32_t sampleIndex[MAX_BATCH_SIZE];
-    uint32_t outputScores[MAX_BATCH_SIZE * ACTIONS];
-    uint32_t bestNextScores[MAX_BATCH_SIZE];
-    
-    // float batchInitState[MAX_BATCH_SIZE * BOARD_SIZE]{};
-    // float batchResState[MAX_BATCH_SIZE * BOARD_SIZE]{};
-    // float batchAction[MAX_BATCH_SIZE]{};
-    // float batchReward[MAX_BATCH_SIZE]{};
+    float outputScores[MAX_BATCH_SIZE * ACTIONS];
+    float bestNextScores[MAX_BATCH_SIZE];
     
     float board[BOARD_SIZE];
     uint8_t x, y, cx, cy;
@@ -385,8 +407,6 @@ int main(int argc, char *argv[])
         for (uint8_t i = 1; i < ACTIONS; i++) {
             if (actions[i] > actions[action]) action = i;
         }
-        // printTensor(model.output, 1, ACTIONS);
-        // action = mixSeed(&seed1, &seed2) % ACTIONS;
         
         // apply action
         board[x + y * BOARD_WIDTH] = 0;
@@ -428,10 +448,35 @@ int main(int argc, char *argv[])
         
         //  compute bestNextScores, fill in batch and forward propogate batch with no noise
         for (tmp = 0; tmp < batchSize; tmp++) {
-            cudaMemcpy(model.input + tmp * BOARD_SIZE, queueInitState + sampleIndex[tmp] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(frozenModel.input + tmp * BOARD_SIZE, queueInitState + sampleIndex[tmp] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
         }
-        forward(&handle, batchSize, &model, 0, NULL, NULL);
-        cudaMemcpy(outputScores, model.output, batchSize * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        
+        printf("Batch input:\n");
+        printTensor(frozenModel.input, batchSize, BOARD_SIZE);
+        
+        if (epoch == EPOCHS - 1) {
+            printf("weight1:\n");
+            printTensor(frozenModel.weight1, BOARD_SIZE, HIDDEN_LAYER_SIZE);
+            printf("bias1:\n");
+            printTensor(frozenModel.bias1, 1, HIDDEN_LAYER_SIZE);
+            printf("hidden:\n");
+            printTensor(frozenModel.hidden, batchSize, HIDDEN_LAYER_SIZE);
+            printf("weight2:\n");
+            printTensor(frozenModel.weight2, HIDDEN_LAYER_SIZE, ACTIONS);
+            printf("bias2:\n");
+            printTensor(frozenModel.bias2, 1, ACTIONS);
+        }
+        
+        // unfreeze model every 16 epochs to prevent overestimation
+        if (epoch % 64 == 0) {
+            copyParams(&model, &frozenModel);
+        }
+        forward(&handle, batchSize, &frozenModel, 0, NULL, NULL);
+        cudaMemcpy(outputScores, frozenModel.output, batchSize * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        
+        printf("output (Output scores):\n");
+        printTensor(frozenModel.output, batchSize, ACTIONS);
+        
         for (tmp = 0; tmp < batchSize; tmp++) {
             bestNextScores[tmp] = outputScores[tmp * ACTIONS];
             for (uint8_t i = 1; i < ACTIONS; i++) {
@@ -446,11 +491,14 @@ int main(int argc, char *argv[])
         forward(&handle, batchSize, &model, 1, &seed1, &seed2);
         // memset gradiant to 0
         cudaMemset(model.outputGrad, 0, batchSize * ACTIONS * sizeof(float));
-        float outputGrad[batchSize * ACTIONS];
+        float outputGrad[batchSize * ACTIONS]{};
         for (tmp = 0; tmp < batchSize; tmp++) {
             // outputGrad = output - (reward + discountFactor * bestNextScore)
-            outputGrad[tmp * ACTIONS + queueAction[sampleIndex[tmp]]] = outputScores[tmp * ACTIONS + queueAction[sampleIndex[tmp]]] - queueReward[sampleIndex[tmp]] + DISCOUNT_FACTOR * bestNextScores[tmp];
+            outputGrad[tmp * ACTIONS + queueAction[sampleIndex[tmp]]] =  queueReward[sampleIndex[tmp]] + DISCOUNT_FACTOR * bestNextScores[tmp] - outputScores[tmp * ACTIONS + queueAction[sampleIndex[tmp]]];
+            // print outputScores, reward, bestNextScores, and outputGrad
+            printf("outputGrad = %f - (%f + %f * %f) = %f\n", outputScores[tmp * ACTIONS + queueAction[sampleIndex[tmp]]], queueReward[sampleIndex[tmp]], DISCOUNT_FACTOR, bestNextScores[tmp], outputGrad[tmp * ACTIONS + queueAction[sampleIndex[tmp]]]);
         }
+        printf("\n");
         cudaMemcpy(model.outputGrad, outputGrad, batchSize * ACTIONS * sizeof(float), cudaMemcpyHostToDevice);
         backward(&handle, batchSize, &model);
         
@@ -474,7 +522,7 @@ int main(int argc, char *argv[])
             // printf("A: %d R: %.0f\n\n\n", queueAction[tmp], queueReward[tmp]);
     }
     
-    printParams(&model);
+    // printParams(&model);
     return 0;
     
     // now run the model forever
