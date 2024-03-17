@@ -9,7 +9,7 @@
 #define LEARNING_RATE 0.01
 #define DISCOUNT_FACTOR 0.9
 #define BOARD_WIDTH 2
-#define EPOCHS 1024
+#define EPOCHS 10240
 #define QUEUE_LENGTH 1024
 #define MAX_BATCH_SIZE 64
 #define HIDDEN_LAYER_SIZE 16
@@ -112,8 +112,8 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
 __global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
     uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) {
-        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.08f;
-        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.08f;
+        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.02f;
+        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.02f;
     }
 }
 
@@ -521,7 +521,7 @@ int main(int argc, char *argv[])
     }
     
     // printParams(&model);
-    return 0;
+    // return 0;
     
     // now run the model forever
     memset(board, 0, BOARD_SIZE * sizeof(float));
