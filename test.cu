@@ -9,7 +9,7 @@
 #define LEARNING_RATE 0.01
 #define DISCOUNT_FACTOR 0.9
 #define BOARD_WIDTH 2
-#define EPOCHS 168
+#define EPOCHS 1024
 #define QUEUE_LENGTH 1024
 #define MAX_BATCH_SIZE 64
 #define HIDDEN_LAYER_SIZE 16
@@ -112,8 +112,8 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
 __global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
     uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) {
-        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.1f;
-        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.1f;
+        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.08f;
+        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.08f;
     }
 }
 
@@ -382,8 +382,7 @@ int main(int argc, char *argv[])
     uint8_t x, y, cx, cy;
     uint8_t action;
     
-    uint32_t epoch;
-    for (epoch = 0; epoch < EPOCHS; epoch++) {
+    for (uint32_t epoch = 0; epoch < EPOCHS; epoch++) {
         // reset, randomize, place player and coin on board, and store initial state
         memset(board, 0, BOARD_SIZE * sizeof(float));
         x = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
@@ -448,21 +447,21 @@ int main(int argc, char *argv[])
             cudaMemcpy(frozenModel.input + tmp * BOARD_SIZE, queueInitState + sampleIndex[tmp] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
         }
         
-        printf("Batch input:\n");
-        printTensor(frozenModel.input, batchSize, BOARD_SIZE);
+        // printf("Batch input:\n");
+        // printTensor(frozenModel.input, batchSize, BOARD_SIZE);
         
-        if (epoch == EPOCHS - 1) {
-            printf("weight1:\n");
-            printTensor(frozenModel.weight1, BOARD_SIZE, HIDDEN_LAYER_SIZE);
-            printf("bias1:\n");
-            printTensor(frozenModel.bias1, 1, HIDDEN_LAYER_SIZE);
-            printf("hidden:\n");
-            printTensor(frozenModel.hidden, batchSize, HIDDEN_LAYER_SIZE);
-            printf("weight2:\n");
-            printTensor(frozenModel.weight2, HIDDEN_LAYER_SIZE, ACTIONS);
-            printf("bias2:\n");
-            printTensor(frozenModel.bias2, 1, ACTIONS);
-        }
+        // if (epoch == EPOCHS - 1) {
+        //     printf("weight1:\n");
+        //     printTensor(frozenModel.weight1, BOARD_SIZE, HIDDEN_LAYER_SIZE);
+        //     printf("bias1:\n");
+        //     printTensor(frozenModel.bias1, 1, HIDDEN_LAYER_SIZE);
+        //     printf("hidden:\n");
+        //     printTensor(frozenModel.hidden, batchSize, HIDDEN_LAYER_SIZE);
+        //     printf("weight2:\n");
+        //     printTensor(frozenModel.weight2, HIDDEN_LAYER_SIZE, ACTIONS);
+        //     printf("bias2:\n");
+        //     printTensor(frozenModel.bias2, 1, ACTIONS);
+        // }
         
         // unfreeze model every 16 epochs to prevent overestimation
         // if (epoch % 64 == 0) {
@@ -471,8 +470,10 @@ int main(int argc, char *argv[])
         forward(&handle, batchSize, &frozenModel, 0, NULL, NULL);
         cudaMemcpy(outputScores, frozenModel.output, batchSize * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         
-        printf("output (Output scores):\n");
-        printTensor(frozenModel.output, batchSize, ACTIONS);
+        if (epoch % 16 == 0) {
+            printf("output (Output scores):\n");
+            printTensor(frozenModel.output, batchSize, ACTIONS);
+        }
         
         for (tmp = 0; tmp < batchSize; tmp++) {
             bestNextScores[tmp] = outputScores[tmp * ACTIONS];
@@ -493,9 +494,9 @@ int main(int argc, char *argv[])
             // outputGrad = output - (reward + discountFactor * bestNextScore)
             outputGrad[tmp * ACTIONS + queueAction[sampleIndex[tmp]]] =  queueReward[sampleIndex[tmp]] + DISCOUNT_FACTOR * bestNextScores[tmp] - outputScores[tmp * ACTIONS + queueAction[sampleIndex[tmp]]];
             // print outputScores, reward, bestNextScores, and outputGrad
-            printf("outputGrad = %f - (%f + %f * %f) = %f\n", outputScores[tmp * ACTIONS + queueAction[sampleIndex[tmp]]], queueReward[sampleIndex[tmp]], DISCOUNT_FACTOR, bestNextScores[tmp], outputGrad[tmp * ACTIONS + queueAction[sampleIndex[tmp]]]);
+            // printf("outputGrad = %f - (%f + %f * %f) = %f\n", outputScores[tmp * ACTIONS + queueAction[sampleIndex[tmp]]], queueReward[sampleIndex[tmp]], DISCOUNT_FACTOR, bestNextScores[tmp], outputGrad[tmp * ACTIONS + queueAction[sampleIndex[tmp]]]);
         }
-        printf("\n");
+        // printf("\n");
         cudaMemcpy(model.outputGrad, outputGrad, batchSize * ACTIONS * sizeof(float), cudaMemcpyHostToDevice);
         backward(&handle, batchSize, &model);
         
