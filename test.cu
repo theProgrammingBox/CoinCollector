@@ -6,7 +6,7 @@
 // #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-#define LEARNING_RATE 0.01
+#define LEARNING_RATE 0.001
 #define DISCOUNT_FACTOR 0.9
 #define BOARD_WIDTH 2
 #define EPOCHS 10240
@@ -112,8 +112,8 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
 __global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
     uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) {
-        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.02f;
-        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.02f;
+        if (elemMulArr2 != NULL) arr[index] += arrGrad[index] * scalar * elemMulArr2[index] - arr[index] * 0.0001f;
+        else arr[index] += arrGrad[index] * scalar - arr[index] * 0.0001f;
     }
 }
 
@@ -437,7 +437,6 @@ int main(int argc, char *argv[])
         
         // adding random entries to batch
         uint32_t tmp;
-        printf("Epoch: %d\n", epoch);
         for (tmp = 0; tmp < batchSize; tmp++) {
             sampleIndex[tmp] = mixSeed(&seed1, &seed2) % queueUpperIndex;
         }
@@ -469,10 +468,14 @@ int main(int argc, char *argv[])
         // }
         forward(&handle, batchSize, &frozenModel, 0, NULL, NULL);
         cudaMemcpy(outputScores, frozenModel.output, batchSize * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
-        
-        if (epoch % 16 == 0) {
+        if (epoch % 64 == 0) {
+            printf("Epoch: %d\n", epoch);
+        }
+        if (epoch == EPOCHS - 1) {
             printf("output (Output scores):\n");
             printTensor(frozenModel.output, batchSize, ACTIONS);
+            printf("Init state:\n");
+            printTensor(frozenModel.input, batchSize, BOARD_SIZE);
         }
         
         for (tmp = 0; tmp < batchSize; tmp++) {
@@ -538,12 +541,17 @@ int main(int argc, char *argv[])
         printf("\033[H\033[J");
         
         cudaMemcpy(model.input, board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-        forward(&handle, 1, &model, 1, &seed1, &seed2);
+        forward(&handle, 1, &frozenModel, 0, NULL, NULL);
         cudaMemcpy(actions, model.output, ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        printf("Action scores: ");
+        for (uint8_t i = 0; i < ACTIONS; i++) {
+            printf("%f ", actions[i]);
+        }
         action = 0;
         for (uint8_t i = 1; i < ACTIONS; i++) {
             if (actions[i] > actions[action]) action = i;
         }
+        // action = mixSeed(&seed1, &seed2) % ACTIONS;
         
         // apply action
         board[x + y * BOARD_WIDTH] = 0;
@@ -561,13 +569,19 @@ int main(int argc, char *argv[])
         }
         board[cx + cy * BOARD_WIDTH] = 2;
         
-        for (x = 0; x < 2; x++) {
-            for (y = 0; y < 2; y++) {
-                printf("%.0f ", board[x + y * 2]);
+        uint8_t i, j;
+        for (i = 0; i < BOARD_WIDTH; i++) {
+            for (j = 0; j < BOARD_WIDTH; j++) {
+                printf("%.0f ", board[i + j * BOARD_WIDTH]);
             }
             printf("\n");
         }
-        printf("\n");
+        
+        struct timeval tv;
+        tv.tv_sec = 0;// seconds
+        tv.tv_usec = 200000;// microseconds
+
+    select(0, NULL, NULL, NULL, &tv);
     }
     
     return 0;
