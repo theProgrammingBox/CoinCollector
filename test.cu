@@ -32,50 +32,109 @@ void initializeSeeds(uint32_t *seed1, uint32_t *seed2) {
     for (uint8_t i = 8; i--;) mixSeed(seed1, seed2);
 }
 
+__global__ void _fillRandom(float* arr, uint32_t size, uint32_t seed1, uint32_t seed2) {
+    uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size) {
+        int32_t hash = index;
+        hash ^= (hash ^ seed1) * 0x4ba1bb47;
+        hash ^= (hash ^ seed2) * 0xb7ebcb79;
+        hash ^= hash << 5;
+        arr[index] = hash * 0.0000000004656612875245797f;
+    }
+}
+
+void fillRandom(float* arr, uint32_t size, uint32_t* seed1, uint32_t* seed2) {
+    mixSeed(seed1, seed2);
+    _fillRandom<<<(size >> 10) + (size & 0x3ff), 1024>>>(arr, size, *seed1, *seed2);
+}
+
 struct Model {
     // mean, variance, and sample noise for weights and biases
-    float weight1[BOARD_SIZE * HIDDEN_LAYER_SIZE];
-    float weight2[HIDDEN_LAYER_SIZE * ACTIONS];
-    float bias1[HIDDEN_LAYER_SIZE];
-    float bias2[ACTIONS];
+    float* weight1;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
+    float* weight2;//[HIDDEN_LAYER_SIZE * ACTIONS];
+    float* bias1;//[HIDDEN_LAYER_SIZE];
+    float* bias2;//[ACTIONS];
     
-    float weight1Var[BOARD_SIZE * HIDDEN_LAYER_SIZE];
-    float weight2Var[HIDDEN_LAYER_SIZE * ACTIONS];
-    float bias1Var[HIDDEN_LAYER_SIZE];
-    float bias2Var[ACTIONS];
+    float* weight1Var;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
+    float* weight2Var;//[HIDDEN_LAYER_SIZE * ACTIONS];
+    float* bias1Var;//[HIDDEN_LAYER_SIZE];
+    float* bias2Var;//[ACTIONS];
     
-    float weight1Sample[BOARD_SIZE * HIDDEN_LAYER_SIZE];
-    float weight2Sample[HIDDEN_LAYER_SIZE * ACTIONS];
-    float bias1Sample[HIDDEN_LAYER_SIZE];
-    float bias2Sample[ACTIONS];
+    float* weight1Sample;//[BOARD_SIZE * HIDDEN_LAYER_SIZE];
+    float* weight2Sample;//[HIDDEN_LAYER_SIZE * ACTIONS];
+    float* bias1Sample;//[HIDDEN_LAYER_SIZE];
+    float* bias2Sample;//[ACTIONS];
     
-    float input[BOARD_SIZE * MAX_BATCH_SIZE];
-    float hidden[HIDDEN_LAYER_SIZE * MAX_BATCH_SIZE];
-    float output[ACTIONS * MAX_BATCH_SIZE];
+    float* input;//[BOARD_SIZE * MAX_BATCH_SIZE];
+    float* hidden;//[HIDDEN_LAYER_SIZE * MAX_BATCH_SIZE];
+    float* output;//[ACTIONS * MAX_BATCH_SIZE];
 };
+
+void initializeModel(Model *model, uint32_t* seed1, uint32_t* seed2) {
+    cudaMalloc((void**)&model->weight1, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->weight2, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    cudaMalloc((void**)&model->bias1, HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->bias2, ACTIONS * sizeof(float));
+    
+    cudaMalloc((void**)&model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    cudaMalloc((void**)&model->bias1Var, HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->bias2Var, ACTIONS * sizeof(float));
+    
+    cudaMalloc((void**)&model->weight1Sample, BOARD_SIZE * HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->weight2Sample, HIDDEN_LAYER_SIZE * ACTIONS * sizeof(float));
+    cudaMalloc((void**)&model->bias1Sample, HIDDEN_LAYER_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->bias2Sample, ACTIONS * sizeof(float));
+    
+    cudaMalloc((void**)&model->input, BOARD_SIZE * MAX_BATCH_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->hidden, HIDDEN_LAYER_SIZE * MAX_BATCH_SIZE * sizeof(float));
+    cudaMalloc((void**)&model->output, ACTIONS * MAX_BATCH_SIZE * sizeof(float));
+    
+    fillRandom(model->weight1, BOARD_SIZE * HIDDEN_LAYER_SIZE, seed1, seed2);
+    fillRandom(model->weight2, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2);
+    fillRandom(model->bias1, HIDDEN_LAYER_SIZE, seed1, seed2);
+    fillRandom(model->bias2, ACTIONS, seed1, seed2);
+    
+    fillRandom(model->weight1Var, BOARD_SIZE * HIDDEN_LAYER_SIZE, seed1, seed2);
+    fillRandom(model->weight2Var, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2);
+    fillRandom(model->bias1Var, HIDDEN_LAYER_SIZE, seed1, seed2);
+    fillRandom(model->bias2Var, ACTIONS, seed1, seed2);
+}
+
+void newNoise(Model *model, uint32_t* seed1, uint32_t* seed2) {
+    fillRandom(model->weight1Sample, BOARD_SIZE * HIDDEN_LAYER_SIZE, seed1, seed2);
+    fillRandom(model->weight2Sample, HIDDEN_LAYER_SIZE * ACTIONS, seed1, seed2);
+    fillRandom(model->bias1Sample, HIDDEN_LAYER_SIZE, seed1, seed2);
+    fillRandom(model->bias2Sample, ACTIONS, seed1, seed2);
+}
+
+void printTensor(float* tensor, uint32_t rows, uint32_t cols) {
+    float* arr = (float*)malloc(rows * cols * sizeof(float));
+    cudaMemcpy(arr, tensor, rows * cols * sizeof(float), cudaMemcpyDeviceToHost);
+    for (uint32_t i = 0; i < rows; i++) {
+        for (uint32_t j = 0; j < cols; j++) {
+            printf("%f ", arr[i * cols + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    free(arr);
+}
 
 void forward(uint8_t *boards, uint32_t batchSize, Model *model) {
     
 }
 
-__global__ void fill(float* arr, float val, uint32_t size) {
-    uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < size) arr[index] = index;
-}
-
 int main(int argc, char *argv[])
 {
-    float* weight;
-    cudaMalloc(&weight, sizeof(float) * 100);
-    fill<<<1, 100>>>(weight, 0.0, 100);
-    float weightHost[100];
-    cudaMemcpy(weightHost, weight, sizeof(float) * 100, cudaMemcpyDeviceToHost);
-    for (uint32_t i = 0; i < 100; i++) printf("%f\n", weightHost[i]);
-    cudaFree(weight);
-    
-    return 0;
+    Model model;
     uint32_t seed1, seed2;
     initializeSeeds(&seed1, &seed2);
+    initializeModel(&model, &seed1, &seed2);
+    printTensor(model.weight1, BOARD_SIZE, HIDDEN_LAYER_SIZE);
+    return 0;
+    // uint32_t seed1, seed2;
+    // initializeSeeds(&seed1, &seed2);
     
     uint8_t queueInitState[QUEUE_LENGTH * BOARD_SIZE]{};
     uint8_t queueResState[QUEUE_LENGTH * BOARD_SIZE]{};
