@@ -7,6 +7,7 @@
 #include <cublas_v2.h>
 
 #define LEARNING_RATE 0.01
+#define DISCOUNT_FACTOR 0.99
 #define BOARD_WIDTH 2
 #define EPOCHS 4096
 #define QUEUE_LENGTH 1024
@@ -17,7 +18,6 @@
 
 /*
 TODO:
-- add forward and backward function
 - add adam optimizer
 */
 
@@ -109,7 +109,6 @@ void reluBackward(float *dTensor, float *dTensorGrad, uint32_t size) {
     _reluBackward<<<(size >> 10) + (size & 0x3ff), 0x400>>>(dTensor, dTensorGrad, size);
 }
 
-
 __global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
     uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) {
@@ -118,6 +117,9 @@ __global__ void _add(float* arr, float* arrGrad, float scalar, float* elemMulArr
     }
 }
 
+void add(float* arr, float* arrGrad, float scalar, float* elemMulArr2, uint32_t size) {
+    _add<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, arrGrad, scalar, elemMulArr2, size);
+}
 
 struct Model {
     // mean, variance, and sample noise for weights and biases
@@ -232,28 +234,42 @@ void printHistogram(float* tensor, uint32_t size) {
     free(arr);
 }
 
-void forward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
+void forward(cublasHandle_t* handle, uint32_t batchSize, Model *model, uint8_t noise, uint32_t* seed1, uint32_t* seed2) {
     const float ONE = 1;
     const float ZERO = 0;
     
-    cudaMemcpy(model->hidden, model->bias1, HIDDEN_LAYER_SIZE * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    float* weight1, *weight2, *bias1, *bias2;
+    if (noise) {
+        newNoise(model, seed1, seed2);
+        weight1 = model->newWeight1;
+        weight2 = model->newWeight2;
+        bias1 = model->newBias1;
+        bias2 = model->newBias2;
+    } else {
+        weight1 = model->weight1;
+        weight2 = model->weight2;
+        bias1 = model->bias1;
+        bias2 = model->bias2;
+    }
+    
+    cudaMemcpy(model->hidden, bias1, HIDDEN_LAYER_SIZE * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_N,
         HIDDEN_LAYER_SIZE, batchSize, BOARD_SIZE,
         &ONE,
-        model->newWeight1, HIDDEN_LAYER_SIZE,
+        weight1, HIDDEN_LAYER_SIZE,
         model->input, BOARD_SIZE,
         &ONE,
         model->hidden, HIDDEN_LAYER_SIZE
     );
     
     reluForward(model->hidden, HIDDEN_LAYER_SIZE * batchSize);
-    cudaMemcpy(model->output, model->bias2, ACTIONS * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(model->output, bias2, ACTIONS * batchSize * sizeof(float), cudaMemcpyDeviceToDevice);
     cublasSgemm(
         *handle, CUBLAS_OP_N, CUBLAS_OP_N,
         ACTIONS, batchSize, HIDDEN_LAYER_SIZE,
         &ONE,
-        model->newWeight2, ACTIONS,
+        weight2, ACTIONS,
         model->hidden, HIDDEN_LAYER_SIZE,
         &ONE,
         model->output, ACTIONS
@@ -328,6 +344,8 @@ int main(int argc, char *argv[])
     
     float actions[ACTIONS];
     uint32_t sampleIndex[MAX_BATCH_SIZE];
+    uint32_t outputScores[MAX_BATCH_SIZE * ACTIONS];
+    uint32_t bestNextScores[MAX_BATCH_SIZE];
     
     // float batchInitState[MAX_BATCH_SIZE * BOARD_SIZE]{};
     // float batchResState[MAX_BATCH_SIZE * BOARD_SIZE]{};
@@ -353,9 +371,8 @@ int main(int argc, char *argv[])
         memcpy(queueInitState + queueIndex * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
         
         // sample action using noisy dqn
-        newNoise(&model, &seed1, &seed2);
         cudaMemcpy(model.input, board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-        forward(&handle, 1, &model);
+        forward(&handle, 1, &model, 1, &seed1, &seed2);
         cudaMemcpy(actions, model.output, ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         action = 0;
         for (uint8_t i = 1; i < ACTIONS; i++) {
@@ -396,16 +413,41 @@ int main(int argc, char *argv[])
         else queueUpperIndex = QUEUE_LENGTH;
         
         // adding random entries to batch
-        uint32_t queueSample;
         uint32_t tmp;
         printf("Epoch: %d\n", epoch);
-        for (queueSample = 0; queueSample < batchSize; queueSample++) {
-            tmp = mixSeed(&seed1, &seed2) % queueUpperIndex;
-            sampleIndex[queueSample] = tmp;
-            cudaMemcpy(model.input + queueSample * BOARD_SIZE, queueInitState + tmp * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-            // cudaMemcpy(model.input + queueSample * BOARD_SIZE, queueResState + tmp * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-            // cudaMemcpy(model.input + queueSample, queueAction + tmp, sizeof(float), cudaMemcpyHostToDevice);
-            // cudaMemcpy(model.input + queueSample, queueReward + tmp, sizeof(float), cudaMemcpyHostToDevice);
+        for (tmp = 0; tmp < batchSize; tmp++) {
+            sampleIndex[tmp] = mixSeed(&seed1, &seed2) % queueUpperIndex;
+        }
+        
+        //  compute bestNextScores, fill in batch and forward propogate batch with no noise
+        for (tmp = 0; tmp < batchSize; tmp++) {
+            cudaMemcpy(model.input + tmp * BOARD_SIZE, queueInitState + sampleIndex[tmp] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+        }
+        forward(&handle, batchSize, &model, 0, NULL, NULL);
+        cudaMemcpy(outputScores, model.output, batchSize * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        for (tmp = 0; tmp < batchSize; tmp++) {
+            bestNextScores[tmp] = outputScores[tmp * ACTIONS];
+            for (uint8_t i = 1; i < ACTIONS; i++) {
+                if (outputScores[tmp * ACTIONS + i] > bestNextScores[tmp]) bestNextScores[tmp] = outputScores[tmp * ACTIONS + i];
+            }
+        }
+        
+        // calculating outputGrad, setting the batch input to the initial state, and forward propogating with noise
+        for (tmp = 0; tmp < batchSize; tmp++) {
+            cudaMemcpy(model.input + tmp * BOARD_SIZE, queueInitState + sampleIndex[tmp] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+        }
+        forward(&handle, batchSize, &model, 1, &seed1, &seed2);
+        // memset gradiant to 0
+        cudaMemset(model.outputGrad, 0, batchSize * ACTIONS * sizeof(float));
+        float outputGrad[batchSize * ACTIONS];
+        for (tmp = 0; tmp < batchSize; tmp++) {
+            // outputGrad = output - (reward + discountFactor * bestNextScore)
+            outputGrad[tmp * ACTIONS + queueAction[sampleIndex[tmp]]] = outputScores[tmp * ACTIONS + queueAction[sampleIndex[tmp]]] - queueReward[sampleIndex[tmp]] + DISCOUNT_FACTOR * bestNextScores[tmp];
+        }
+        cudaMemcpy(model.outputGrad, outputGrad, batchSize * ACTIONS * sizeof(float), cudaMemcpyHostToDevice);
+        backward(&handle, batchSize, &model);
+        
+        
             
             // for (x = 0; x < 2; x++) {
             //     for (y = 0; y < 2; y++) {
@@ -423,12 +465,53 @@ int main(int argc, char *argv[])
             // }
             
             // printf("A: %d R: %.0f\n\n\n", queueAction[tmp], queueReward[tmp]);
+    }
+    
+    // now run the model forever
+    memset(board, 0, BOARD_SIZE * sizeof(float));
+    x = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+    y = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+    do {
+        cx = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+        cy = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+    } while (x == cx && y == cy);
+    board[x + y * BOARD_WIDTH] = 1;
+    board[cx + cy * BOARD_WIDTH] = 2;
+    while (1) {
+        // clear terminal
+        printf("\033[H\033[J");
+        
+        cudaMemcpy(model.input, board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+        forward(&handle, 1, &model, 1, &seed1, &seed2);
+        cudaMemcpy(actions, model.output, ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        action = 0;
+        for (uint8_t i = 1; i < ACTIONS; i++) {
+            if (actions[i] > actions[action]) action = i;
         }
         
-        // forward propogate batch
-        newNoise(&model, &seed1, &seed2);
-        forward(&handle, batchSize, &model);
-        backward(&handle, batchSize, &model);
+        // apply action
+        board[x + y * BOARD_WIDTH] = 0;
+        switch (action) {
+            case 0: if (x > 0) x--; break;
+            case 1: if (x < BOARD_WIDTH - 1) x++; break;
+            case 2: if (y > 0) y--; break;
+            case 3: if (y < BOARD_WIDTH - 1) y++; break;
+        }
+        board[x + y * BOARD_WIDTH] = 1;
+        
+        while (x == cx && y == cy) {
+            cx = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+            cy = mixSeed(&seed1, &seed2) % BOARD_WIDTH;
+        }
+        board[cx + cy * BOARD_WIDTH] = 2;
+        
+        for (x = 0; x < 2; x++) {
+            for (y = 0; y < 2; y++) {
+                printf("%.0f ", board[x + y * 2]);
+            }
+            printf("\n");
+        }
+        printf("\n");
     }
     
     return 0;
