@@ -6,7 +6,7 @@
 // #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-#define LEARNING_RATE 0.01
+#define LEARNING_RATE 0.001
 #define DISCOUNT_FACTOR 0.99
 #define BOARD_WIDTH 2
 #define EPOCHS 4096
@@ -324,6 +324,13 @@ void backward(cublasHandle_t* handle, uint32_t batchSize, Model *model) {
     add(model->weight1Var, model->weight1Grad, LEARNING_RATE, model->weight1Sample, BOARD_SIZE * HIDDEN_LAYER_SIZE);
 }
 
+void printParams(Model *model) {
+    printTensor(model->weight1, BOARD_SIZE, HIDDEN_LAYER_SIZE);
+    printTensor(model->bias1, 1, HIDDEN_LAYER_SIZE);
+    printTensor(model->weight2, HIDDEN_LAYER_SIZE, ACTIONS);
+    printTensor(model->bias2, 1, ACTIONS);
+}
+
 int main(int argc, char *argv[])
 {
     cublasHandle_t handle;
@@ -466,6 +473,9 @@ int main(int argc, char *argv[])
             
             // printf("A: %d R: %.0f\n\n\n", queueAction[tmp], queueReward[tmp]);
     }
+    
+    printParams(&model);
+    return 0;
     
     // now run the model forever
     memset(board, 0, BOARD_SIZE * sizeof(float));
