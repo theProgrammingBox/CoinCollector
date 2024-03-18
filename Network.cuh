@@ -191,6 +191,12 @@ void backwardPropagate(cublasHandle_t *cublasHandle, Network* net) {
     }
 }
 
+void copyParams(Network* net, Network* net2) {
+    for (uint32_t i = 0; i < net->layers; i++) {
+        cudaMemcpy(net2->weights[i], net->weights[i], net->parameters[i] * net->parameters[i + 1] * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+}
+
 void printTensor(float* tensor, uint32_t width, uint32_t height) {
     float* arr = (float*)malloc(height * width * sizeof(float));
     cudaMemcpy(arr, tensor, height * width * sizeof(float), cudaMemcpyDeviceToHost);

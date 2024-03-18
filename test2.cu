@@ -61,42 +61,27 @@ int main(int argc, char *argv[])
         }
     }
     
-    // // print states
-    // for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
-    //     for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
-    //         for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
-    //             printf("%.0f ", states[i * BOARD_SIZE + dy * BOARD_WIDTH + dx]);
-    //         }
-    //         printf("\n");
-    //     }
-    //     printf("Action: %d\n", actions[i]);
-    //     printf("Reward: %.0f\n", rewards[i]);
-    //     for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
-    //         for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
-    //             printf("%.0f ", nextStates[i * BOARD_SIZE + dy * BOARD_WIDTH + dx]);
-    //         }
-    //         printf("\n");
-    //     }
-    //     printf("\n");
-    // }
-    
     cublasHandle_t handle;
     cublasCreate(&handle);
     
-    Network net;
+    Network net, net2;
     uint32_t parameters[] = {BOARD_SIZE + 1, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
-    initializeNetwork(&net, parameters, layers, &noise, 0.004f, NUM_FINAL_STATES, 0);
+    initializeNetwork(&net, parameters, layers, &noise, 0.01f, NUM_FINAL_STATES, 0);
+    initializeNetwork(&net2, parameters, layers, &noise, 0.01f, NUM_FINAL_STATES, 0);
     
     float one = 1;
     for (uint32_t epoch = 0; epoch < (1 << 12); epoch++) {
-        for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
-            cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1), nextStates + i * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-            cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1) + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+        if (epoch % 5 == 0) {
+            copyParams(&net, &net2);
         }
-        forwardPropagate(&handle, &net);
+        for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
+            cudaMemcpy(net2.outputs[0] + i * (BOARD_SIZE + 1), nextStates + i * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net2.outputs[0] + i * (BOARD_SIZE + 1) + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+        }
+        forwardPropagate(&handle, &net2);
         float output[NUM_FINAL_STATES * ACTIONS];
-        cudaMemcpy(output, net.outputs[net.layers], NUM_FINAL_STATES * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(output, net2.outputs[net2.layers], NUM_FINAL_STATES * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         float nextBestScore[NUM_FINAL_STATES];
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
             float bestScore = output[i * ACTIONS];
@@ -109,7 +94,7 @@ int main(int argc, char *argv[])
             // printf("%f ", bestScore);
         }
         
-        if (epoch % 128 == 0) {
+        if (epoch % 64 == 0) {
             float maxScore = 0;
             float minScore = 0;
             float avgScore = 0;
