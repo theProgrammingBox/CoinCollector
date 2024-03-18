@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
     float nextStates[BOARD_SIZE * NUM_FINAL_STATES];
     
     uint32_t queueIdx = 0;
-    float board[9]{};
+    float board[BOARD_SIZE];
     for (uint8_t py = 0; py < BOARD_WIDTH; py++) {
         for (uint8_t px = 0; px < BOARD_WIDTH; px++) {
             for (uint8_t cy = 0; cy < BOARD_WIDTH; cy++) {
@@ -79,6 +79,10 @@ int main(int argc, char *argv[])
     const uint32_t EPOCHES = 1 << 14;
     float one = 1;
     // for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
+    uint8_t px = 0;
+    uint8_t py = 0;
+    memset(board, 0, BOARD_SIZE * sizeof(float));
+    board[py * BOARD_WIDTH + px] = -1;
     for (uint32_t epoch = 0; true; epoch++) {
         if (epoch % 4 == 0) {
             copyParams(&net, &net2);
@@ -136,8 +140,29 @@ int main(int argc, char *argv[])
         backwardPropagate(&handle, &net);
         
         getKeyboardInput(&keyboard);
-        for (uint8_t i = 0; i < keyboard.retBufLen; i++) {
-            printf("%d\n", keyboard.buffer[i]);
+        uint8_t action = 4;
+        for (uint8_t i = 0; i < keyboard.retBufLen && action == 4; i++) {
+            // printf("%d\n", keyboard.buffer[i]);
+            switch (keyboard.buffer[i]) {
+                case 97: action = 0; if (px > 0) px--; break;
+                case 100: action = 1; if (px < BOARD_WIDTH - 1) px++; break;
+                case 119: action = 2; if (py > 0) py--; break;
+                case 115: action = 3; if (py < BOARD_WIDTH - 1) py++; break;
+            }
+        }
+        if (action != 4) {
+            printf("%d\n", action);
+        //     printf("\033[H\033[J");
+        //     for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
+        //         for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
+        //             switch ((int)board[dy * BOARD_WIDTH + dx]) {
+        //                 case 1: printf("||"); break;
+        //                 case -1: printf("$$"); break;
+        //                 default: printf("..");
+        //             }
+        //         }
+        //         printf("\n");
+        //     }
         }
     }
     
