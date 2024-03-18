@@ -2,18 +2,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>
-#include <sys/select.h>
-#include <fcntl.h>
-#include <stdint.h>
-
-#define BUFFER_SIZE 256 // Adjust for expected input burst size
-
-void make_non_blocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-}
 
 int main() {
+    const int BUFFER_SIZE = 256;
     char buffer[BUFFER_SIZE];
     int buffer_len = 0;
     
@@ -21,38 +12,29 @@ int main() {
     tcgetattr(STDIN_FILENO, &raw);
     raw.c_lflag &= ~(ECHO | ICANON);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    
+    fd_set readfds;
+    struct timeval timeout = {0, 0};
 
     while (1) {
         printf("Start\n");
         memset(buffer, 0, BUFFER_SIZE);
         buffer_len = 0;
 
-        // Perform other stuff for 1 second
-        sleep(1);
+        sleep(2); // Simulate doing something else for 2 second.
         
-        fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(STDIN_FILENO, &readfds);
-        struct timeval timeout = {0, 0};
-        uint8_t notDone = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &timeout) > 0;
-         while (notDone) {
-            buffer_len += read(STDIN_FILENO, buffer + buffer_len, BUFFER_SIZE - buffer_len);
-            notDone = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &timeout) > 0;
-        }
-
-        int i = 0;
-        while (i < buffer_len) {
-            if (buffer[i] == 27 && (i + 2 < buffer_len) && buffer[i+1] == '[') { // Start of an escape sequence
-                // Print the sequence as a single group
-                printf("Read");
-                for (int j = 0; j < 3 && (i + j) < buffer_len; j++) {
-                    printf(" %d", buffer[i + j]);
+        if (select(STDIN_FILENO + 1, &readfds, NULL, NULL, &timeout) > 0) {
+            buffer_len = read(STDIN_FILENO, buffer, BUFFER_SIZE);
+            for (int i = 0; i < buffer_len;) {
+                if (buffer[i] == 27 && i + 2 < buffer_len && buffer[i+1] == 91) {
+                    printf("-%d\n", buffer[i+2]);
+                    i += 3;
+                } else {
+                    printf("%d\n", buffer[i]);
+                    i++;
                 }
-                printf("\n");
-                i += 3;
-            } else {
-                printf("Read %d\n", buffer[i]);
-                i++;
             }
         }
     }
