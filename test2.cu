@@ -65,8 +65,8 @@ int main(int argc, char *argv[])
     cublasCreate(&handle);
     
     Network net, net2;
-    float learningRate = 0.01f;
-    float weightDecay = 0;
+    float learningRate = 0.006f;
+    float weightDecay = 0.001f;
     uint32_t parameters[] = {BOARD_SIZE + 1, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
     initializeNetwork(&net, parameters, layers, &noise, learningRate, NUM_FINAL_STATES, weightDecay);
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
     const uint32_t EPOCHES = 1 << 14;
     float one = 1;
     for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
-        if (epoch % 6 == 0) {
+        if (epoch % 4 == 0) {
             copyParams(&net, &net2);
         }
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
