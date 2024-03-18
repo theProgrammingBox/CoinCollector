@@ -45,7 +45,7 @@ void fill(float* arr, uint32_t size, float value) {
     _fill<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, size, value);
 }
 
-void initializeNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noise, float learningRate = 0.001f, uint32_t batchSize = 1, float weightDecay = 0, float meanBeta = 0.9, float varBeta = 0.999) {
+void initNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noise, float learningRate = 0.001f, uint32_t batchSize = 1, float weightDecay = 0, float meanBeta = 0.9, float varBeta = 0.999) {
     net->parameters = parameters;
     net->layers = layers;
     net->learningRate = learningRate;

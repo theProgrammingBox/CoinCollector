@@ -69,8 +69,8 @@ int main(int argc, char *argv[])
     float weightDecay = 0.00f;
     uint32_t parameters[] = {BOARD_SIZE + 1, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
-    initializeNetwork(&net, parameters, layers, &noise, learningRate, NUM_FINAL_STATES, weightDecay);
-    initializeNetwork(&net2, parameters, layers, &noise, learningRate, NUM_FINAL_STATES, weightDecay);
+    initNetwork(&net, parameters, layers, &noise, learningRate, NUM_FINAL_STATES, weightDecay);
+    initNetwork(&net2, parameters, layers, &noise, learningRate, NUM_FINAL_STATES, weightDecay);
     
     const uint32_t EPOCHES = 1 << 14;
     float one = 1;
