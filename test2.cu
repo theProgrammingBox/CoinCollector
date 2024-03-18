@@ -79,10 +79,10 @@ int main(int argc, char *argv[])
     const uint32_t EPOCHES = 1 << 14;
     float one = 1;
     // for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
-    uint8_t px = 0;
-    uint8_t py = 0;
+    uint8_t cx = 0;
+    uint8_t cy = 0;
     memset(board, 0, BOARD_SIZE * sizeof(float));
-    board[py * BOARD_WIDTH + px] = -1;
+    board[cy * BOARD_WIDTH + cx] = -1;
     for (uint32_t epoch = 0; true; epoch++) {
         if (epoch % 4 == 0) {
             copyParams(&net, &net2);
@@ -105,22 +105,22 @@ int main(int argc, char *argv[])
             nextBestScore[i] = bestScore;
         }
         
-        if (epoch % 64 == 0) {
-            float maxScore = 0;
-            float minScore = 0;
-            float avgScore = 0;
-            for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
-                if (output[i * ACTIONS + actions[i]] > maxScore) {
-                    maxScore = output[i * ACTIONS + actions[i]];
-                }
-                if (output[i * ACTIONS + actions[i]] < minScore) {
-                    minScore = output[i * ACTIONS + actions[i]];
-                }
-                avgScore += output[i * ACTIONS + actions[i]];
-            }
-            avgScore /= NUM_FINAL_STATES;
-            printf("Max: %f, Min: %f, Avg: %f, %d/%d\n", maxScore, minScore, avgScore, epoch, EPOCHES);
-        }
+        // if (epoch % 64 == 0) {
+        //     float maxScore = 0;
+        //     float minScore = 0;
+        //     float avgScore = 0;
+        //     for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
+        //         if (output[i * ACTIONS + actions[i]] > maxScore) {
+        //             maxScore = output[i * ACTIONS + actions[i]];
+        //         }
+        //         if (output[i * ACTIONS + actions[i]] < minScore) {
+        //             minScore = output[i * ACTIONS + actions[i]];
+        //         }
+        //         avgScore += output[i * ACTIONS + actions[i]];
+        //     }
+        //     avgScore /= NUM_FINAL_STATES;
+        //     printf("Max: %f, Min: %f, Avg: %f, %d/%d\n", maxScore, minScore, avgScore, epoch, EPOCHES);
+        // }
         
         // feed states into network
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
@@ -141,28 +141,46 @@ int main(int argc, char *argv[])
         
         getKeyboardInput(&keyboard);
         uint8_t action = 4;
+        board[cy * BOARD_WIDTH + cx] = 0;
         for (uint8_t i = 0; i < keyboard.retBufLen && action == 4; i++) {
             // printf("%d\n", keyboard.buffer[i]);
             switch (keyboard.buffer[i]) {
-                case 97: action = 0; if (px > 0) px--; break;
-                case 100: action = 1; if (px < BOARD_WIDTH - 1) px++; break;
-                case 119: action = 2; if (py > 0) py--; break;
-                case 115: action = 3; if (py < BOARD_WIDTH - 1) py++; break;
+                case 97: action = 0; if (cx > 0) cx--; break;
+                case 100: action = 1; if (cx < BOARD_WIDTH - 1) cx++; break;
+                case 119: action = 2; if (cy > 0) cy--; break;
+                case 115: action = 3; if (cy < BOARD_WIDTH - 1) cy++; break;
             }
         }
-        if (action != 4) {
-            printf("%d\n", action);
-        //     printf("\033[H\033[J");
-        //     for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
-        //         for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
-        //             switch ((int)board[dy * BOARD_WIDTH + dx]) {
-        //                 case 1: printf("||"); break;
-        //                 case -1: printf("$$"); break;
-        //                 default: printf("..");
-        //             }
-        //         }
-        //         printf("\n");
-        //     }
+        board[cy * BOARD_WIDTH + cx] = -1;
+        uint32_t i = 0;
+        for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
+            for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
+                if (dx == cx && dy == cy) continue;
+                board[dy * BOARD_WIDTH + dx] = 1;
+                cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1), board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+                cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1) + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+                i++;
+                board[dy * BOARD_WIDTH + dx] = 0;
+            }
+        }
+        // void printTensor(float* tensor, uint32_t width, uint32_t height) {
+        // printTensor(net.outputs[0], (BOARD_SIZE + 1), (BOARD_SIZE - 1));
+        net.batchSize = BOARD_SIZE - 1;
+        forwardPropagate(&handle, &net);
+        cudaMemcpy(output, net.outputs[net.layers], (BOARD_SIZE - 1) * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        net.batchSize = NUM_FINAL_STATES;
+        printf("\033[H\033[J");
+        i = 0;
+        for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
+            for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
+                switch ((int)board[dy * BOARD_WIDTH + dx]) {
+                    case 1: printf("||"); break;
+                    case -1: printf("$$"); break;
+                    default: printf("..");
+                }
+                i++;
+            }
+            printf("\n");
         }
     }
     
