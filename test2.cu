@@ -5,7 +5,7 @@
 #define ACTIONS 4
 #define NUM_FINAL_STATES (BOARD_SIZE * (BOARD_SIZE - 1) * ACTIONS)
 
-#define DECAY 0.9
+#define DECAY 0.8
 
 int main(int argc, char *argv[])
 {
@@ -65,8 +65,8 @@ int main(int argc, char *argv[])
     cublasCreate(&handle);
     
     Network net, net2;
-    float learningRate = 0.006f;
-    float weightDecay = 0.001f;
+    float learningRate = 0.001f;
+    float weightDecay = 0.00f;
     uint32_t parameters[] = {BOARD_SIZE + 1, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
     initializeNetwork(&net, parameters, layers, &noise, learningRate, NUM_FINAL_STATES, weightDecay);

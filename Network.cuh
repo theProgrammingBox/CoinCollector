@@ -138,6 +138,7 @@ __global__ void _integratedAdamUpdate(float *dTensor, float *dTensorGrad, float 
     dTensorMean[idx] = mean;
     dTensorVar[idx] = var;
     dTensor[idx] += net.learningRate * (meanCor / (sqrtf(varCor) + 1e-8f) - net.weightDecay * dTensor[idx]);
+    // dTensor[idx] += net.learningRate * (grad - net.weightDecay * dTensor[idx]);
 }
 
 void integratedAdamUpdate(float *dTensor, float *dTensorGrad, float *dTensorMean, float *dTensorVar, uint32_t size, Network *net) {
