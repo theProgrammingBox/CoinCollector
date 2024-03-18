@@ -34,15 +34,15 @@ void fillUniform(float* arr, uint32_t size, Noise* noise, float lowerBound, floa
     _fillUniform<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, size, *noise, lowerBound, upperBound);
 }
 
-__global__ void _fill(float* arr, uint32_t size, Noise noise, float value) {
+__global__ void _fill(float* arr, uint32_t size, float value) {
     uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < size) {
         arr[index] = value;
     }
 }
 
-void fill(float* arr, uint32_t size, Noise* noise, float value) {
-    _fill<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, size, *noise, value);
+void fill(float* arr, uint32_t size, float value) {
+    _fill<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, size, value);
 }
 
 void initializeNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noise, float learningRate = 0.01f, uint32_t batchSize = 1, float weightDecay = 0.001, float meanBeta = 0.9, float varBeta = 0.999) {
@@ -75,8 +75,8 @@ void initializeNetwork(Network* net, uint32_t* parameters, uint32_t layers, Nois
         
         // using relu initialization
         fillUniform(net->weights[i], parameters[i] * parameters[i + 1], noise, -1.0f / sqrtf(parameters[i]), 1.0f / sqrtf(parameters[i]));
-        fill(net->weightGradMean[i], parameters[i] * parameters[i + 1], noise, 0.0f);
-        fill(net->weightGradVar[i], parameters[i] * parameters[i + 1], noise, 0.0f);
+        fill(net->weightGradMean[i], parameters[i] * parameters[i + 1], 0.0f);
+        fill(net->weightGradVar[i], parameters[i] * parameters[i + 1], 0.0f);
         
         // printTensor(net->weights[i], parameters[i], parameters[i + 1]);
     }
@@ -199,6 +199,8 @@ void backwardPropagate(cublasHandle_t *cublasHandle, Network* net) {
         // printf("output grad\n");
         // printTensor(net->outputGrad[i + 1], net->parameters[i + 1], net->batchSize);
         
+        // memset net->outputGrad[i]
+        // fill(net->outputGrad[i], net->parameters[i] * net->batchSize, 1.0f);
         cublasSgemm(*cublasHandle, CUBLAS_OP_N, CUBLAS_OP_T,
             net->parameters[i + 1], net->parameters[i], net->batchSize,
             &ONE,
@@ -257,4 +259,16 @@ void printParams(Network* net) {
     }
     printf("Output\n");
     printTensor(net->outputs[net->layers], net->parameters[net->layers], net->batchSize);
+}
+
+void printBackParams(Network* net) {
+    for (uint32_t i = net->layers; i--;) {
+        printf("Layer %d\n", i);
+        printf("OutputGrad\n");
+        printTensor(net->outputGrad[i], net->parameters[i + 1], net->batchSize);
+        printf("WeightGrad\n");
+        printTensor(net->weightGrad[i], net->parameters[i + 1], net->parameters[i]);
+    }
+    printf("OutputGrad\n");
+    printTensor(net->outputGrad[0], net->parameters[1], net->batchSize);
 }

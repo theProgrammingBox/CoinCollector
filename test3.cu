@@ -21,14 +21,15 @@ int main(int argc, char** argv) {
         float output[net.batchSize * net.parameters[net.layers]];
         cudaMemcpy(output, net.outputs[net.layers], sizeof(output), cudaMemcpyDeviceToHost);
         
-        float testOutputGrad[2 * 1];
-        for (uint32_t i = 0; i < 2; i++) {
+        float testOutputGrad[net.batchSize * net.parameters[net.layers]];
+        for (uint32_t i = 0; i < net.batchSize * net.parameters[net.layers]; i++) {
             testOutputGrad[i] = 1 - output[i];
         }
         cudaMemcpy(net.outputGrad[net.layers], testOutputGrad, net.batchSize * net.parameters[net.layers] * sizeof(float), cudaMemcpyHostToDevice);
         backwardPropagate(&handle, &net);
     }
     
+    printBackParams(&net);
     printParams(&net);
     
     return 0;
