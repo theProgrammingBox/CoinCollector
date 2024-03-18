@@ -5,7 +5,7 @@
 #define ACTIONS 4
 #define NUM_FINAL_STATES (BOARD_SIZE * (BOARD_SIZE - 1) * ACTIONS)
 
-#define DECAY 0.9
+#define DECAY 0.99
 
 int main(int argc, char *argv[])
 {
@@ -86,10 +86,10 @@ int main(int argc, char *argv[])
     Network net;
     uint32_t parameters[] = {BOARD_SIZE + 1, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
-    initializeNetwork(&net, parameters, layers, &noise, 0.001f, NUM_FINAL_STATES);
+    initializeNetwork(&net, parameters, layers, &noise, 0.01f, NUM_FINAL_STATES, 0);
     
     float one = 1;
-    for (uint32_t epoch = 0; epoch < (1 << 12); epoch++) {
+    for (uint32_t epoch = 0; epoch < (1 << 6); epoch++) {
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
             cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1), nextStates + i * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1) + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
@@ -144,6 +144,75 @@ int main(int argc, char *argv[])
     
     printParams(&net);
     printBackParams(&net);
+    
+    net.batchSize = 1;
+    uint32_t score = 0;
+    uint32_t steps = 0;
+    memset(board, 0, BOARD_SIZE * sizeof(float));
+    uint8_t px = genNoise(&noise) % BOARD_WIDTH;
+    uint8_t py = genNoise(&noise) % BOARD_WIDTH;
+    board[py * BOARD_WIDTH + px] = 1;
+    uint8_t cx, cy;
+    do {
+        cx = genNoise(&noise) % BOARD_WIDTH;
+        cy = genNoise(&noise) % BOARD_WIDTH;
+    } while ((px == cx) && (py == cy));
+    board[cy * BOARD_WIDTH + cx] = -1;
+    while (true) {
+        printf("\033[H\033[J");
+        cudaMemcpy(net.outputs[0], board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+        cudaMemcpy(net.outputs[0] + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+        forwardPropagate(&handle, &net);
+        float output[ACTIONS];
+        cudaMemcpy(output, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        uint8_t bestAction = 0;
+        for (uint8_t a = 1; a < ACTIONS; a++) {
+            if (output[a] > output[bestAction]) {
+                bestAction = a;
+            }
+        }
+        
+        // print output and best action
+        for (uint8_t a = 0; a < ACTIONS; a++) {
+            printf("%f ", output[a]);
+        }
+        printf("\n");
+        printf("Best action: %d\n", bestAction);
+        
+        board[py * BOARD_WIDTH + px] = 0;
+        switch (bestAction) {
+            case 0: if (px > 0) px--; break;
+            case 1: if (px < BOARD_WIDTH - 1) px++; break;
+            case 2: if (py > 0) py--; break;
+            case 3: if (py < BOARD_WIDTH - 1) py++; break;
+        }
+        board[py * BOARD_WIDTH + px] = 1;
+        score += (px == cx) && (py == cy);
+        steps++;
+        while ((px == cx) && (py == cy)) {
+            cx = genNoise(&noise) % BOARD_WIDTH;
+            cy = genNoise(&noise) % BOARD_WIDTH;
+        }
+        board[cy * BOARD_WIDTH + cx] = -1;
+        
+        for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
+            for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
+                switch ((int)board[dy * BOARD_WIDTH + dx]) {
+                    case 1: printf("||"); break;
+                    case -1: printf("$$"); break;
+                    default: printf("  ");
+                }
+            }
+            printf("\n");
+        }
+        printf("Score: %d\n", score);
+        printf("Steps: %d\n", steps);
+        
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;
+        select(0, NULL, NULL, NULL, &tv);
+    }
 
     return 0;
 }

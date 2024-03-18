@@ -571,8 +571,7 @@ int main(int argc, char *argv[])
         struct timeval tv;
         tv.tv_sec = 0;// seconds
         tv.tv_usec = 200000;// microseconds
-
-    select(0, NULL, NULL, NULL, &tv);
+        select(0, NULL, NULL, NULL, &tv);
     }
     
     return 0;
