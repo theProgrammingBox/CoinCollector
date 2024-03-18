@@ -1,11 +1,11 @@
 #include "Network.cuh"
 
-#define BOARD_WIDTH 3
+#define BOARD_WIDTH 4
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
 #define ACTIONS 4
 #define NUM_FINAL_STATES (BOARD_SIZE * (BOARD_SIZE - 1) * ACTIONS)
 
-#define DECAY 0.99
+#define DECAY 0.9
 
 int main(int argc, char *argv[])
 {
@@ -54,8 +54,8 @@ int main(int argc, char *argv[])
                         board[cy * BOARD_WIDTH + cx] = -1;
                     }
                     queueIdx++;
-                    board[py * 3 + px] = 0;
-                    board[cy * 3 + cx] = 0;
+                    board[py * BOARD_WIDTH + px] = 0;
+                    board[cy * BOARD_WIDTH + cx] = 0;
                 }
             }
         }
@@ -86,10 +86,10 @@ int main(int argc, char *argv[])
     Network net;
     uint32_t parameters[] = {BOARD_SIZE + 1, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
-    initializeNetwork(&net, parameters, layers, &noise, 0.01f, NUM_FINAL_STATES, 0);
+    initializeNetwork(&net, parameters, layers, &noise, 0.004f, NUM_FINAL_STATES, 0);
     
     float one = 1;
-    for (uint32_t epoch = 0; epoch < (1 << 6); epoch++) {
+    for (uint32_t epoch = 0; epoch < (1 << 12); epoch++) {
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
             cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1), nextStates + i * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * (BOARD_SIZE + 1) + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
@@ -109,20 +109,22 @@ int main(int argc, char *argv[])
             // printf("%f ", bestScore);
         }
         
-        float maxScore = 0;
-        float minScore = 0;
-        float avgScore = 0;
-        for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
-            if (output[i * ACTIONS + actions[i]] > maxScore) {
-                maxScore = output[i * ACTIONS + actions[i]];
+        if (epoch % 128 == 0) {
+            float maxScore = 0;
+            float minScore = 0;
+            float avgScore = 0;
+            for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
+                if (output[i * ACTIONS + actions[i]] > maxScore) {
+                    maxScore = output[i * ACTIONS + actions[i]];
+                }
+                if (output[i * ACTIONS + actions[i]] < minScore) {
+                    minScore = output[i * ACTIONS + actions[i]];
+                }
+                avgScore += output[i * ACTIONS + actions[i]];
             }
-            if (output[i * ACTIONS + actions[i]] < minScore) {
-                minScore = output[i * ACTIONS + actions[i]];
-            }
-            avgScore += output[i * ACTIONS + actions[i]];
+            avgScore /= NUM_FINAL_STATES;
+            printf("Max: %f, Min: %f, Avg: %f\n", maxScore, minScore, avgScore);
         }
-        avgScore /= NUM_FINAL_STATES;
-        printf("Max: %f, Min: %f, Avg: %f\n", maxScore, minScore, avgScore);
         
         // feed states into network
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
@@ -134,7 +136,7 @@ int main(int argc, char *argv[])
         
         float outputGrad[NUM_FINAL_STATES * ACTIONS]{};
         for (uint32_t i = 0; i < NUM_FINAL_STATES; i++) {
-            outputGrad[i * ACTIONS + actions[i]] = rewards[i] + DECAY * nextBestScore[i] - output[i * ACTIONS + actions[i]] - output[i * ACTIONS + actions[i]];
+            outputGrad[i * ACTIONS + actions[i]] = rewards[i] + DECAY * nextBestScore[i] - output[i * ACTIONS + actions[i]];
         }
         
         // backpropagate
@@ -142,8 +144,8 @@ int main(int argc, char *argv[])
         backwardPropagate(&handle, &net);
     }
     
-    printParams(&net);
-    printBackParams(&net);
+    // printParams(&net);
+    // printBackParams(&net);
     
     net.batchSize = 1;
     uint32_t score = 0;
@@ -200,7 +202,7 @@ int main(int argc, char *argv[])
                 switch ((int)board[dy * BOARD_WIDTH + dx]) {
                     case 1: printf("||"); break;
                     case -1: printf("$$"); break;
-                    default: printf("  ");
+                    default: printf("..");
                 }
             }
             printf("\n");
@@ -210,7 +212,7 @@ int main(int argc, char *argv[])
         
         struct timeval tv;
         tv.tv_sec = 0;
-        tv.tv_usec = 500000;
+        tv.tv_usec = 200000;
         select(0, NULL, NULL, NULL, &tv);
     }
 
