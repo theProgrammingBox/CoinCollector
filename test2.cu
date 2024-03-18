@@ -1,4 +1,5 @@
 #include "Network.cuh"
+#include "Keyboard.cuh"
 
 #define BOARD_WIDTH 4
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
@@ -61,6 +62,9 @@ int main(int argc, char *argv[])
         }
     }
     
+    struct Keyboard keyboard;
+    initKeyboard(&keyboard);
+    
     cublasHandle_t handle;
     cublasCreate(&handle);
     
@@ -74,7 +78,8 @@ int main(int argc, char *argv[])
     
     const uint32_t EPOCHES = 1 << 14;
     float one = 1;
-    for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
+    // for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
+    for (uint32_t epoch = 0; true; epoch++) {
         if (epoch % 4 == 0) {
             copyParams(&net, &net2);
         }
@@ -129,6 +134,11 @@ int main(int argc, char *argv[])
         // backpropagate
         cudaMemcpy(net.outputGrad[net.layers], outputGrad, NUM_FINAL_STATES * ACTIONS * sizeof(float), cudaMemcpyHostToDevice);
         backwardPropagate(&handle, &net);
+        
+        getKeyboardInput(&keyboard);
+        for (uint8_t i = 0; i < keyboard.retBufLen; i++) {
+            printf("%d\n", keyboard.buffer[i]);
+        }
     }
     
     // printParams(&net);
