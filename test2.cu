@@ -1,7 +1,7 @@
 #include "Network.cuh"
 #include "Keyboard.cuh"
 
-#define BOARD_WIDTH 4
+#define BOARD_WIDTH 6
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
 #define ACTIONS 4
 #define NUM_FINAL_STATES (BOARD_SIZE * (BOARD_SIZE - 1) * ACTIONS)
@@ -163,8 +163,6 @@ int main(int argc, char *argv[])
                 board[dy * BOARD_WIDTH + dx] = 0;
             }
         }
-        // void printTensor(float* tensor, uint32_t width, uint32_t height) {
-        // printTensor(net.outputs[0], (BOARD_SIZE + 1), (BOARD_SIZE - 1));
         net.batchSize = BOARD_SIZE - 1;
         forwardPropagate(&handle, &net);
         cudaMemcpy(output, net.outputs[net.layers], (BOARD_SIZE - 1) * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
@@ -181,7 +179,7 @@ int main(int argc, char *argv[])
         }
         
         net.batchSize = NUM_FINAL_STATES;
-        printf("\033[H\033[J");
+        printf("\033[H\033[JEPOCH: %d\n", epoch);
         i = 0;
         for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
             for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
