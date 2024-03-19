@@ -53,8 +53,6 @@ int main(int argc, char **argv) {
     board[py * BOARD_WIDTH + px] = 1.0f;
     board[cy * BOARD_WIDTH + cx] = -1.0f;
     
-    float maxScore = -INFINITY;
-    float minScore = INFINITY;
     const float one = 1.0f;
     for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
         memcpy(states + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
@@ -94,8 +92,20 @@ int main(int argc, char **argv) {
             }
         }
         
-        float maxScore2 = -INFINITY;
-        float minScore2 = INFINITY;
+        float maxScore = -INFINITY;
+        float minScore = INFINITY;
+        float bestScore = outputs[0];
+        for (uint8_t i = 1; i < VIS_SIZE; i++) {
+            if (outputs[i * ACTIONS] > bestScore) {
+                bestScore = outputs[i * ACTIONS];
+            }
+            if (outputs[i * ACTIONS] > maxScore) {
+                maxScore = outputs[i * ACTIONS];
+            }
+            if (outputs[i * ACTIONS] < minScore) {
+                minScore = outputs[i * ACTIONS];
+            }
+        }
         printf("\033[H\033[J");
         printf("%d/%d\n", epoch, EPOCHES);
         idx = 0;
@@ -106,15 +116,13 @@ int main(int argc, char **argv) {
                     printf("$$");
                 } else {
                     uint8_t act = 0;
-                    float bestScore = outputs[idx * ACTIONS];
+                    bestScore = outputs[idx * ACTIONS];
                     for (uint8_t i = 1; i < ACTIONS; i++) {
                         if (outputs[idx * ACTIONS + i] > bestScore) {
                             bestScore = outputs[idx * ACTIONS + i];
                             act = i;
                         }
                     }
-                    if (bestScore > maxScore2) maxScore2 = bestScore;
-                    if (bestScore < minScore2) minScore2 = bestScore;
                     if (x == px && y == py) {
                         printf("\x1b[38;2;255;0;255m");
                     } else {
@@ -133,8 +141,6 @@ int main(int argc, char **argv) {
             printf("\n");
         }
         printf("\x1b[38;2;255;255;255m");
-        maxScore = maxScore2;
-        minScore = minScore2;
         
         board[py * BOARD_WIDTH + px] = 0.0f;
         switch (action) {
@@ -188,7 +194,6 @@ int main(int argc, char **argv) {
         forwardNoiseless(&handle, &net);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
-        float bestScore;
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             bestScore = outputs[i * ACTIONS];
             for (uint8_t j = 1; j < ACTIONS; j++) {
