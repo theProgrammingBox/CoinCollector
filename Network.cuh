@@ -105,8 +105,8 @@ void initNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noi
         
         float std = sqrtf(3.0f / parameters[i]);
         fillUniform(net->weightMeans[i], parameters[i] * parameters[i + 1], noise, -std, std);
-        // fill(net->weightVars[i], parameters[i] * parameters[i + 1], 0.017f);
-        fillUniform(net->weightVars[i], parameters[i] * parameters[i + 1], noise, 0.0f, 1.0f / parameters[i]);
+        fill(net->weightVars[i], parameters[i] * parameters[i + 1], 0.017f);
+        // fillUniform(net->weightVars[i], parameters[i] * parameters[i + 1], noise, 0.0f, 1.0f / parameters[i]);
         fill(net->weightMeanGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
         fill(net->weightVarGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
         fill(net->weightMeanGradVars[i], parameters[i] * parameters[i + 1], 0.0f);
@@ -229,9 +229,11 @@ __global__ void _fillGaussian(float* arr, uint32_t size, Noise noise, float mean
     if (index < size) {
         uint32_t hash = (index ^ noise.seed1) * 0x4ba1bb47;
         hash ^= (hash >> 17);
-        float u1 = (float)hash / 0xffffffff;
         hash ^= (hash ^ noise.seed2) * 0xb7ebcb79;
-        hash ^= (hash << 13);
+        hash ^= (hash >> 13);
+        float u1 = (float)hash / 0xffffffff;
+        hash ^= (index ^ noise.seed2) * 0x4ba1bb47;
+        hash ^= (hash >> 17);
         arr[index] = sqrtf(-2.0f * logf(u1)) * cosf(6.28318530718f / 0xffffffff * hash);
     }
 }

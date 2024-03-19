@@ -73,19 +73,19 @@ int main(int argc, char **argv) {
             }
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
-        forwardNoisy(&handle, &net, &noise);
-        // forwardNoiseless(&handle, &net);
+        // forwardNoisy(&handle, &net, &noise);
+        forwardNoiseless(&handle, &net);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
-        // float epsilon = (epoch / (EPOCHES * 0.5f));
-        // epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
+        float epsilon = (epoch / (EPOCHES * 0.5f));
+        epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
         uint8_t action = 0;
         uint32_t pos = py * BOARD_WIDTH + px;
         uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
-        // float bestScore = outputs[(pos - bias) * ACTIONS] + genNormal(&noise) * epsilon;
-        float bestScore = outputs[(pos - bias) * ACTIONS];
+        float bestScore = outputs[(pos - bias) * ACTIONS] + genNormal(&noise) * epsilon;
+        // float bestScore = outputs[(pos - bias) * ACTIONS];
         for (uint8_t i = 1; i < ACTIONS; i++) {
-            // float sample = outputs[(pos - bias) * ACTIONS + i] + genNormal(&noise) * epsilon;
-            float sample = outputs[(pos - bias) * ACTIONS + i];
+            float sample = outputs[(pos - bias) * ACTIONS + i] + genNormal(&noise) * epsilon;
+            // float sample = outputs[(pos - bias) * ACTIONS + i];
             if (sample > bestScore) {
                 bestScore = sample;
                 action = i;
