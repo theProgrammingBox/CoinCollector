@@ -94,16 +94,18 @@ int main(int argc, char **argv) {
         
         float maxScore = -INFINITY;
         float minScore = INFINITY;
-        float bestScore = outputs[0];
         for (uint8_t i = 1; i < VIS_SIZE; i++) {
-            if (outputs[i * ACTIONS] > bestScore) {
-                bestScore = outputs[i * ACTIONS];
+            float bestScore = outputs[i * ACTIONS];
+            for (uint8_t j = 1; j < ACTIONS; j++) {
+                if (outputs[i * ACTIONS + j] > bestScore) {
+                    bestScore = outputs[i * ACTIONS + j];
+                }
             }
-            if (outputs[i * ACTIONS] > maxScore) {
-                maxScore = outputs[i * ACTIONS];
+            if (bestScore > maxScore) {
+                maxScore = bestScore;
             }
-            if (outputs[i * ACTIONS] < minScore) {
-                minScore = outputs[i * ACTIONS];
+            if (bestScore < minScore) {
+                minScore = bestScore;
             }
         }
         printf("\033[H\033[J");
@@ -116,7 +118,7 @@ int main(int argc, char **argv) {
                     printf("$$");
                 } else {
                     uint8_t act = 0;
-                    bestScore = outputs[idx * ACTIONS];
+                    float bestScore = outputs[idx * ACTIONS];
                     for (uint8_t i = 1; i < ACTIONS; i++) {
                         if (outputs[idx * ACTIONS + i] > bestScore) {
                             bestScore = outputs[idx * ACTIONS + i];
@@ -194,6 +196,7 @@ int main(int argc, char **argv) {
         forwardNoiseless(&handle, &net);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
+        float bestScore;
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             bestScore = outputs[i * ACTIONS];
             for (uint8_t j = 1; j < ACTIONS; j++) {
