@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
         
         float maxScore = outputs[0];
         float minScore = outputs[0];
-        for (uint8_t i = 1; i < ACTIONS; i++) {
+        for (uint8_t i = 1; i < ACTIONS * VIS_SIZE; i++) {
             if (outputs[i] > maxScore) {
                 maxScore = outputs[i];
             }
