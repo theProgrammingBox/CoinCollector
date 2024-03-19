@@ -1,7 +1,7 @@
 #include "Network.cuh"
 #include "Keyboard.cuh"
 
-#define BOARD_WIDTH 6
+#define BOARD_WIDTH 7
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
 #define ACTIONS 4
 #define NUM_FINAL_STATES (BOARD_SIZE * (BOARD_SIZE - 1) * ACTIONS)
