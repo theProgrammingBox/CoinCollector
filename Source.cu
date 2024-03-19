@@ -1,86 +1,151 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <sys/time.h>
+#include "Network.cuh"
 
-#include "Header.cuh"
+#define BOARD_WIDTH 3
+#define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
+#define ACTIONS 4
+#define INPUTS (BOARD_SIZE + 1)
 
+#define QUEUE_SIZE 10000
+#define MIN_QUEUE_SIZE 1000
+#define BATCH_SIZE 64
+#define LEARNING_RATE 0.001f
+#define WEIGHT_DECAY 0.000f
+#define REWARD_DECAY 0.99f
+#define EPOCHES 100000
 
-inline void checkCudaStatus(cudaError_t status) {
-    if (status != cudaSuccess) {
-        printf("cuda API failed with status %d: %s\n", status, cudaGetErrorString(status));
-        exit(-1);
-    }
-}
-
-void mixSeed(uint32_t *seed1, uint32_t *seed2) {
-    *seed2 *= 0xbf324c81;
-    *seed1 ^= *seed2 ^ 0x4ba1bb47;
-    *seed1 *= 0x9c7493ad;
-    *seed2 ^= *seed1 ^ 0xb7ebcb79;
-}
-
-void fillSeeds(uint32_t *seed1, uint32_t *seed2) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    *seed1 = tv.tv_sec;
-    *seed2 = tv.tv_usec;
-    for (uint8_t i = 8; i--;) mixSeed(seed1, seed2);
-}
-
-void fillHData(uint8_t *hData, const uint32_t seed1, const uint32_t seed2) {
-    uint8_t *dPerm;
-    uint8_t *dData;
+int main(int argc, char **argv) {
+    Noise noise;
+    initNoise(&noise);
     
-    checkCudaStatus(cudaMalloc((void**)&dPerm, 0x400 * sizeof(uint8_t)));
-    checkCudaStatus(cudaMalloc((void**)&dData, 0x100000000 * sizeof(uint8_t)));
+    cublasHandle_t handle;
+    cublasCreate(&handle);
     
-    fillDPerm<<<1, 0x400>>>(dPerm, seed1, seed2);
-    fillDData<<<0x400000, 0x400>>>(dData, dPerm, 1, 2048, 8, 0.5);
+    Network net;
+    uint32_t parameters[] = {INPUTS, 16, 16, ACTIONS};
+    uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
+    initNetwork(&net, parameters, layers, &noise, LEARNING_RATE, BATCH_SIZE, WEIGHT_DECAY);
     
-    checkCudaStatus(cudaMemcpy(hData, dData, 0x100000000 * sizeof(uint8_t), cudaMemcpyDeviceToHost));
+    float states[BOARD_SIZE * QUEUE_SIZE];
+    uint8_t actions[QUEUE_SIZE];
+    float rewards[QUEUE_SIZE];
+    float nextStates[BOARD_SIZE * QUEUE_SIZE];
+    uint32_t queueIdx = 0;
     
-    checkCudaStatus(cudaFree(dPerm));
-    checkCudaStatus(cudaFree(dData));
-}
-
-int main() {
-    uint32_t seed1, seed2;
-    fillSeeds(&seed1, &seed2);
+    uint32_t sampledIdxs[BATCH_SIZE];
+    float outputs[ACTIONS * BATCH_SIZE];
+    float outputGrads[ACTIONS * BATCH_SIZE];
+    float bestScores[BATCH_SIZE];
     
-    uint8_t *hData = (uint8_t*)malloc(0x100000000 * sizeof(uint8_t));
-    fillHData(hData, seed1, seed2);
+    float board[BOARD_SIZE]{};
+    uint8_t px, py, cx, cy;
     
-    const uint8_t VIEW_RADIUS = 16;
-    const uint8_t VIEW_SIZE = VIEW_RADIUS * 2 + 1;
+    px = genNoise(&noise) % BOARD_WIDTH;
+    py = genNoise(&noise) % BOARD_WIDTH;
+    do {
+        cx = genNoise(&noise) % BOARD_WIDTH;
+        cy = genNoise(&noise) % BOARD_WIDTH;
+    } while (cx == px && cy == py);
+    board[py * BOARD_WIDTH + px] = 1.0f;
+    board[cy * BOARD_WIDTH + cx] = -1.0f;
     
-    uint16_t x = 0, y = 0;
-    uint8_t move;
-    
-    while(1) {
-        system("clear");
-        for (uint16_t i = VIEW_SIZE, ry = y + VIEW_RADIUS; i--; ry--) {
-            for (uint16_t j = VIEW_SIZE, rx = x + VIEW_RADIUS; j--; rx--) {
-                switch (hData[(uint32_t)ry << 16 | rx]) {
-                    case 0: printf("\x1b[38;2;040;150;160m..\x1b[0m"); break;
-                    case 1: printf("\x1b[38;2;050;190;170m--\x1b[0m"); break;
-                    case 2: printf("\x1b[38;2;140;210;210m;;\x1b[0m"); break;
-                    case 3: printf("\x1b[38;2;230;220;210m==\x1b[0m"); break;
-                    case 4: printf("\x1b[38;2;200;170;140m**\x1b[0m"); break;
-                    case 5: printf("\x1b[38;2;090;190;090m++\x1b[0m"); break;
-                    case 6: printf("\x1b[38;2;040;120;040m##\x1b[0m"); break;
-                    case 7: printf("\x1b[38;2;000;060;010m@@\x1b[0m"); break;
+    const float one = 1.0f;
+    for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
+        memcpy(states + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
+        
+        uint8_t action;
+        if (genNoise(&noise) % 100 < 10) {
+            action = genNoise(&noise) % ACTIONS;
+        } else {
+            net.batchSize = 1;
+            cudaMemcpy(net.outputs[0], board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net.outputs[0] + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+            forward(&handle, &net);
+            cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+            action = 0;
+            for (uint8_t i = 1; i < ACTIONS; i++) {
+                if (outputs[i] > outputs[action]) {
+                    action = i;
+                }
+            }
+        }
+        
+        printf("\033[H\033[J");
+        printf("%d/%d\n", epoch + 1, EPOCHES);
+        for (uint8_t i = 0; i < ACTIONS; i++) {
+            printf("%f, ", outputs[i]);
+        }
+        printf("\n");
+        for (uint8_t y = 0; y < BOARD_WIDTH; y++) {
+            for (uint8_t x = 0; x < BOARD_WIDTH; x++) {
+                switch ((int)board[y * BOARD_WIDTH + x]) {
+                    case 1: printf("||"); break;
+                    case -1: printf("$$"); break;
+                    default: printf(".."); break;
                 }
             }
             printf("\n");
         }
-
-        printf("Move (wasd): ");
-        scanf(" %c", &move);
-
-        x += ((move == 'a') - (move == 'd')) * 16;
-        y += ((move == 'w') - (move == 's')) * 16;
+        
+        board[py * BOARD_WIDTH + px] = 0.0f;
+        switch (action) {
+            case 0: if (px > 0) px--; break;
+            case 1: if (px < BOARD_WIDTH - 1) px++; break;
+            case 2: if (py > 0) py--; break;
+            case 3: if (py < BOARD_WIDTH - 1) py++; break;
+        }
+        board[py * BOARD_WIDTH + px] = 1.0f;
+        
+        while (cx == px && cy == py) {
+            cx = genNoise(&noise) % BOARD_WIDTH;
+            cy = genNoise(&noise) % BOARD_WIDTH;
+        }
+        board[cy * BOARD_WIDTH + cx] = -1.0f;
+        
+        actions[queueIdx] = action;
+        rewards[queueIdx] = cx == px && cy == py;
+        memcpy(nextStates + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
+        queueIdx *= ++queueIdx != QUEUE_SIZE;
+        
+        if (epoch + 1 < MIN_QUEUE_SIZE) continue;
+        uint32_t idxCap = epoch >= QUEUE_SIZE ? QUEUE_SIZE : epoch;
+        for (uint32_t i = 0; i < BATCH_SIZE; i++) {
+            sampledIdxs[i] = genNoise(&noise) % idxCap;
+        }
+        
+        net.batchSize = BATCH_SIZE;
+        for (uint32_t i = 0; i < BATCH_SIZE; i++) {
+            cudaMemcpy(net.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+        }
+        forward(&handle, &net);
+        cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        
+        float bestScore;
+        for (uint32_t i = 0; i < BATCH_SIZE; i++) {
+            bestScore = outputs[i * ACTIONS];
+            for (uint8_t j = 1; j < ACTIONS; j++) {
+                if (outputs[i * ACTIONS + j] > bestScore) {
+                    bestScore = outputs[i * ACTIONS + j];
+                }
+            }
+            bestScores[i] = bestScore;
+        }
+        
+        for (uint32_t i = 0; i < BATCH_SIZE; i++) {
+            cudaMemcpy(net.outputs[0] + i * INPUTS, states + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+        }
+        forward(&handle, &net);
+        cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        memset(outputGrads, 0, ACTIONS * BATCH_SIZE * sizeof(float));
+        for (uint32_t i = 0; i < BATCH_SIZE; i++) {
+            outputGrads[i * ACTIONS + actions[sampledIdxs[i]]] = rewards[sampledIdxs[i]] + REWARD_DECAY * bestScores[i] - outputs[i * ACTIONS + actions[sampledIdxs[i]]];
+        }
+        cudaMemcpy(net.outputGrads[net.layers], outputGrads, ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+        backward(&handle, &net);
+        // printParams(&net);
+        // printBackParams(&net);
     }
-    
-    free(hData);
+
     return 0;
 }

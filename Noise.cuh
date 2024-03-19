@@ -13,7 +13,7 @@ uint32_t genNoise(Noise* noise) {
     return noise->seed1;
 }
 
-void initializeNoise(Noise* noise) {
+void initNoise(Noise* noise) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     noise->seed1 = tv.tv_sec;
