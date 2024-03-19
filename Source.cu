@@ -1,7 +1,8 @@
 #include "Network.cuh"
 
-#define BOARD_WIDTH 7
+#define BOARD_WIDTH 4
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
+#define VIS_SIZE (BOARD_SIZE - 1)
 #define ACTIONS 4
 #define INPUTS (BOARD_SIZE + 1)
 #define SCORE_SIZE 1000
@@ -24,7 +25,7 @@ int main(int argc, char **argv) {
     Network net;
     uint32_t parameters[] = {INPUTS, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
-    initNetwork(&net, parameters, layers, &noise, LEARNING_RATE, BATCH_SIZE, WEIGHT_DECAY);
+    initNetwork(&net, parameters, layers, &noise, LEARNING_RATE, BATCH_SIZE > VIS_SIZE ? BATCH_SIZE : VIS_SIZE, WEIGHT_DECAY);
     
     float states[BOARD_SIZE * QUEUE_SIZE];
     uint8_t actions[QUEUE_SIZE];
@@ -33,7 +34,7 @@ int main(int argc, char **argv) {
     uint32_t queueIdx = 0;
     
     uint32_t sampledIdxs[BATCH_SIZE];
-    float outputs[ACTIONS * BATCH_SIZE];
+    float outputs[ACTIONS * (BATCH_SIZE > VIS_SIZE ? BATCH_SIZE : VIS_SIZE)];
     float outputGrads[ACTIONS * BATCH_SIZE];
     float bestScores[BATCH_SIZE];
     
@@ -56,22 +57,86 @@ int main(int argc, char **argv) {
     for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
         memcpy(states + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
         
+        
         uint8_t action;
-        // if (genNoise(&noise) % 100 < 10) {
-        //     action = genNoise(&noise) % ACTIONS;
-        // } else {
-            net.batchSize = 1;
-            cudaMemcpy(net.outputs[0], board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-            cudaMemcpy(net.outputs[0] + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
-            forwardNoisy(&handle, &net, &noise);
-            cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        net.batchSize = VIS_SIZE;
+        // cudaMemcpy(net.outputs[0], board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+        // cudaMemcpy(net.outputs[0] + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+        board[py * BOARD_WIDTH + px] = 0.0f;
+        uint32_t idx = 0;
+        for (uint8_t pyy = 0; pyy < BOARD_WIDTH; pyy++) {
+            for (uint8_t pxx = 0; pxx < BOARD_WIDTH; pxx++) {
+                if (pxx == cx && pyy == cy) continue;
+                board[pyy * BOARD_WIDTH + pxx] = 1.0f;
+                cudaMemcpy(net.outputs[0] + idx * INPUTS, board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+                cudaMemcpy(net.outputs[0] + idx * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+                idx++;
+                board[pyy * BOARD_WIDTH + pxx] = 0.0f;
+            }
+        }
+        board[py * BOARD_WIDTH + px] = 1.0f;
+        // forwardNoisy(&handle, &net, &noise);
+        forwardNoiseless(&handle, &net);
+        // cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        if (genNoise(&noise) % 100 < 10) {
+            action = genNoise(&noise) % ACTIONS;
+        } else {
             action = 0;
+            uint32_t pos = py * BOARD_WIDTH + px;
+            uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
             for (uint8_t i = 1; i < ACTIONS; i++) {
-                if (outputs[i] > outputs[action]) {
+                if (outputs[i + (pos - bias) * ACTIONS] > outputs[action + (pos - bias) * ACTIONS]) {
                     action = i;
                 }
             }
-        // }
+        }
+        
+        float maxScore = outputs[0];
+        float minScore = outputs[0];
+        for (uint8_t i = 1; i < ACTIONS; i++) {
+            if (outputs[i] > maxScore) {
+                maxScore = outputs[i];
+            }
+            if (outputs[i] < minScore) {
+                minScore = outputs[i];
+            }
+        }
+        printf("\033[H\033[J");
+        printf("%d/%d\n", epoch, EPOCHES);
+        idx = 0;
+        for (uint8_t y = 0; y < BOARD_WIDTH; y++) {
+            for (uint8_t x = 0; x < BOARD_WIDTH; x++) {
+                if (x == cx && y == cy) {
+                    printf("\x1b[38;2;255;255;0m");
+                    printf("$$");
+                } else {
+                    uint8_t act = 0;
+                    float bestScore = outputs[idx * ACTIONS];
+                    for (uint8_t i = 1; i < ACTIONS; i++) {
+                        if (outputs[idx * ACTIONS + i] > bestScore) {
+                            bestScore = outputs[idx * ACTIONS + i];
+                            act = i;
+                        }
+                    }
+                    if (x == px && y == py) {
+                        printf("\x1b[38;2;255;0;255m");
+                    } else {
+                        uint8_t g = (bestScore - minScore) / (maxScore - minScore) * 255;
+                        printf("\x1b[38;2;%d;%d;0m", 255 - g, g);
+                    }
+                    switch (act) {
+                        case 0: printf("<<"); break;
+                        case 1: printf(">>"); break;
+                        case 2: printf("^^"); break;
+                        case 3: printf("vv"); break;
+                    }
+                    idx++;
+                }
+            }
+            printf("\n");
+        }
+        printf("\x1b[38;2;255;255;255m");
         
         board[py * BOARD_WIDTH + px] = 0.0f;
         switch (action) {
@@ -94,23 +159,22 @@ int main(int argc, char **argv) {
         memcpy(nextStates + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
         queueIdx *= ++queueIdx != QUEUE_SIZE;
         
-        printf("\033[H\033[J");
-        printf("%d/%d\n", epoch, EPOCHES);
-        for (uint8_t y = 0; y < BOARD_WIDTH; y++) {
-            for (uint8_t x = 0; x < BOARD_WIDTH; x++) {
-                switch ((int)board[y * BOARD_WIDTH + x]) {
-                    case 1: printf("||"); break;
-                    case -1: printf("$$"); break;
-                    default: printf(".."); break;
-                }
-            }
-            printf("\n");
-        }
         score[scoreIdx] = reward;
         scoreSum += reward;
         scoreIdx *= ++scoreIdx != SCORE_SIZE;
         scoreSum -= score[scoreIdx];
-        printf("Average score: %f\n", scoreSum / SCORE_SIZE);
+        uint32_t scoreIdxCap = epoch >= SCORE_SIZE ? SCORE_SIZE : epoch + 1;
+        printf("Average score: %f\n", scoreSum / scoreIdxCap);
+        if (epoch > SCORE_SIZE && scoreSum / scoreIdxCap > 0.28f) {
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 1000000;
+            select(0, NULL, NULL, NULL, &tv);
+        }
+        // printTensor(net.weightSamples[0], net.parameters[1], net.parameters[0]);
+        // printTensor(net.weightVars[0], net.parameters[1], net.parameters[0]);
+        // printTensor(net.weightMeans[0], net.parameters[1], net.parameters[0]);
+        
         
         if (epoch + 1 < MIN_QUEUE_SIZE) continue;
         uint32_t idxCap = epoch >= QUEUE_SIZE ? QUEUE_SIZE : epoch;
@@ -141,14 +205,16 @@ int main(int argc, char **argv) {
             cudaMemcpy(net.outputs[0] + i * INPUTS, states + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
-        forwardNoisy(&handle, &net, &noise);
+        // forwardNoisy(&handle, &net, &noise);
+        forwardNoiseless(&handle, &net);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         memset(outputGrads, 0, ACTIONS * BATCH_SIZE * sizeof(float));
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             outputGrads[i * ACTIONS + actions[sampledIdxs[i]]] = rewards[sampledIdxs[i]] + REWARD_DECAY * bestScores[i] - outputs[i * ACTIONS + actions[sampledIdxs[i]]];
         }
         cudaMemcpy(net.outputGrads[net.layers], outputGrads, ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-        backwardNoisy(&handle, &net);
+        // backwardNoisy(&handle, &net);
+        backwardNoiseless(&handle, &net);
     }
 
     return 0;
