@@ -173,10 +173,21 @@ int main(int argc, char *argv[])
         i = 0;
         for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
             for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
-                switch ((int)board[dy * BOARD_WIDTH + dx]) {
-                    case 1: printf("||"); break;
-                    case -1: printf("$$"); break;
-                    default: printf("..");
+                if (dx == cx && dy == cy) {
+                    printf("$$");
+                } else {
+                    uint8_t bestAction = 0;
+                    for (uint8_t a = 1; a < ACTIONS; a++) {
+                        if (output[i * ACTIONS + a] > output[i * ACTIONS + bestAction]) {
+                            bestAction = a;
+                        }
+                    }
+                    switch (bestAction) {
+                        case 0: printf("<<"); break;
+                        case 1: printf(">>"); break;
+                        case 2: printf("^^"); break;
+                        case 3: printf("vv"); break;
+                    }
                 }
                 i++;
             }
