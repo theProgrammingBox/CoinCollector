@@ -39,17 +39,17 @@ int main(int argc, char *argv[])
                         }
                         board[py * BOARD_WIDTH + px] = 0;
                         board[pyy * BOARD_WIDTH + pxx] = 1;
-                        uint8_t cxx = cx;
-                        uint8_t cyy = cy;
-                        while ((pxx == cxx) && (pyy == cyy)) {
-                            cxx = genNoise(&noise) % BOARD_WIDTH;
-                            cyy = genNoise(&noise) % BOARD_WIDTH;
-                        }
-                        board[cyy * BOARD_WIDTH + cxx] = -1;
+                        // uint8_t cxx = cx;
+                        // uint8_t cyy = cy;
+                        // while ((pxx == cxx) && (pyy == cyy)) {
+                        //     cxx = genNoise(&noise) % BOARD_WIDTH;
+                        //     cyy = genNoise(&noise) % BOARD_WIDTH;
+                        // }
+                        // board[cyy * BOARD_WIDTH + cxx] = -1;
                         actions[queueIdx * ACTIONS + a] = a;
                         rewards[queueIdx * ACTIONS + a] = (pxx == cx) && (pyy == cy);
                         memcpy(nextStates + queueIdx * ACTIONS * BOARD_SIZE + a * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
-                        board[cyy * BOARD_WIDTH + cxx] = 0;
+                        // board[cyy * BOARD_WIDTH + cxx] = 0;
                         board[pyy * BOARD_WIDTH + pxx] = 0;
                         board[py * BOARD_WIDTH + px] = 1;
                         board[cy * BOARD_WIDTH + cx] = -1;
@@ -203,8 +203,8 @@ int main(int argc, char *argv[])
                         case 2: printf("^^"); break;
                         case 3: printf("vv"); break;
                     }
+                    i++;
                 }
-                i++;
             }
             printf("\n");
         }
