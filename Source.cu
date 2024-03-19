@@ -44,11 +44,11 @@ int main(int argc, char **argv) {
     uint32_t scoreIdx = 0;
     float scoreSum = 0.0f;
     
-    px = genNoise(&noise) % BOARD_WIDTH;
-    py = genNoise(&noise) % BOARD_WIDTH;
+    px = genUint(&noise) % BOARD_WIDTH;
+    py = genUint(&noise) % BOARD_WIDTH;
     do {
-        cx = genNoise(&noise) % BOARD_WIDTH;
-        cy = genNoise(&noise) % BOARD_WIDTH;
+        cx = genUint(&noise) % BOARD_WIDTH;
+        cy = genUint(&noise) % BOARD_WIDTH;
     } while (cx == px && cy == py);
     board[py * BOARD_WIDTH + px] = 1.0f;
     board[cy * BOARD_WIDTH + cx] = -1.0f;
@@ -79,16 +79,19 @@ int main(int argc, char **argv) {
         forwardNoiseless(&handle, &net);
         // cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
-        if (genNoise(&noise) % 64 < (epoch < EPOCHES * 0.1 ? 64 : epoch < EPOCHES * 0.2 ? 48 : epoch < EPOCHES * 0.3 ? 32 : epoch < EPOCHES * 0.4 ? 16 : 0)) {
-            action = genNoise(&noise) % ACTIONS;
-        } else {
-            action = 0;
-            uint32_t pos = py * BOARD_WIDTH + px;
-            uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
-            for (uint8_t i = 1; i < ACTIONS; i++) {
-                if (outputs[i + (pos - bias) * ACTIONS] > outputs[action + (pos - bias) * ACTIONS]) {
-                    action = i;
-                }
+        float epsilon = (epoch / (EPOCHES * 0.9f));
+        epsilon = epsilon > 1.0f ? 0.0f : 1 - epsilon;
+        action = 0;
+        uint32_t pos = py * BOARD_WIDTH + px;
+        uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
+        float bestScore = outputs[(pos - bias) * ACTIONS] + genNormal(&noise) * epsilon;
+        // float bestScore = outputs[(pos - bias) * ACTIONS];
+        for (uint8_t i = 1; i < ACTIONS; i++) {
+            float sample = outputs[(pos - bias) * ACTIONS + i] + genNormal(&noise) * epsilon;
+            // float sample = outputs[(pos - bias) * ACTIONS + i];
+            if (sample > bestScore) {
+                bestScore = sample;
+                action = i;
             }
         }
         
@@ -158,8 +161,8 @@ int main(int argc, char **argv) {
         rewards[queueIdx] = reward;
         
         while (cx == px && cy == py) {
-            cx = genNoise(&noise) % BOARD_WIDTH;
-            cy = genNoise(&noise) % BOARD_WIDTH;
+            cx = genUint(&noise) % BOARD_WIDTH;
+            cy = genUint(&noise) % BOARD_WIDTH;
         }
         board[cy * BOARD_WIDTH + cx] = -1.0f;
         memcpy(nextStates + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
@@ -183,9 +186,9 @@ int main(int argc, char **argv) {
         
         
         if (epoch + 1 < MIN_QUEUE_SIZE) continue;
-        uint32_t idxCap = epoch >= QUEUE_SIZE ? QUEUE_SIZE : epoch;
+        uint32_t idxCap = epoch + 1 >= QUEUE_SIZE ? QUEUE_SIZE : epoch + 1;
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
-            sampledIdxs[i] = genNoise(&noise) % idxCap;
+            sampledIdxs[i] = genUint(&noise) % idxCap;
         }
         
         net.batchSize = BATCH_SIZE;
@@ -194,11 +197,11 @@ int main(int argc, char **argv) {
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
         forwardNoiseless(&handle, &net);
+        // forwardNoisy(&handle, &net, &noise);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
-        float bestScore;
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
-            bestScore = outputs[i * ACTIONS];
+            float bestScore = outputs[i * ACTIONS];
             for (uint8_t j = 1; j < ACTIONS; j++) {
                 if (outputs[i * ACTIONS + j] > bestScore) {
                     bestScore = outputs[i * ACTIONS + j];

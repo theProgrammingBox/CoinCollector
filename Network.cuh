@@ -41,7 +41,7 @@ __global__ void _fillUniform(float* arr, uint32_t size, Noise noise, float lower
 }
 
 void fillUniform(float* arr, uint32_t size, Noise* noise, float lowerBound, float upperBound) {
-    genNoise(noise);
+    mix(noise);
     _fillUniform<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, size, *noise, lowerBound, upperBound);
 }
 
@@ -236,7 +236,7 @@ __global__ void _fillGaussian(float* arr, uint32_t size, Noise noise, float mean
 }
 
 void fillGaussian(float* arr, uint32_t size, Noise* noise, float mean, float variance) {
-    genNoise(noise);
+    mix(noise);
     _fillGaussian<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, size, *noise, mean, variance);
 }
 
