@@ -1,6 +1,6 @@
 #include "Network.cuh"
 
-#define BOARD_WIDTH 3
+#define BOARD_WIDTH 7
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
 #define ACTIONS 4
 #define INPUTS (BOARD_SIZE + 1)
@@ -57,13 +57,13 @@ int main(int argc, char **argv) {
         memcpy(states + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
         
         uint8_t action;
-        if (genNoise(&noise) % 100 < 10) {
-            action = genNoise(&noise) % ACTIONS;
-        } else {
+        // if (genNoise(&noise) % 100 < 10) {
+        //     action = genNoise(&noise) % ACTIONS;
+        // } else {
             net.batchSize = 1;
             cudaMemcpy(net.outputs[0], board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
-            forward(&handle, &net);
+            forwardNoisy(&handle, &net, &noise);
             cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
             action = 0;
             for (uint8_t i = 1; i < ACTIONS; i++) {
@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
                     action = i;
                 }
             }
-        }
+        // }
         
         board[py * BOARD_WIDTH + px] = 0.0f;
         switch (action) {
@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
             cudaMemcpy(net.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
-        forward(&handle, &net);
+        forwardNoiseless(&handle, &net);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
         float bestScore;
@@ -141,14 +141,14 @@ int main(int argc, char **argv) {
             cudaMemcpy(net.outputs[0] + i * INPUTS, states + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
-        forward(&handle, &net);
+        forwardNoisy(&handle, &net, &noise);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         memset(outputGrads, 0, ACTIONS * BATCH_SIZE * sizeof(float));
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             outputGrads[i * ACTIONS + actions[sampledIdxs[i]]] = rewards[sampledIdxs[i]] + REWARD_DECAY * bestScores[i] - outputs[i * ACTIONS + actions[sampledIdxs[i]]];
         }
         cudaMemcpy(net.outputGrads[net.layers], outputGrads, ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-        backward(&handle, &net);
+        backwardNoisy(&handle, &net);
     }
 
     return 0;

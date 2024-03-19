@@ -8,14 +8,26 @@ struct Network {
     float weightDecay;
     float meanBeta;
     float varBeta;
+    
     float meanCor;
     float varCor;
+    
     float** outputs;
     float** outputGrads;
+    
     float** weights;
-    float** weightGrads;
-    float** weightGradMeans;
-    float** weightGradVars;
+    float** weightMeans;
+    float** weightVars;
+    float** weightSamples;
+    
+    float** weightMeanGrads;
+    float** weightVarGrads;
+    
+    float** weightMeanGradMeans;
+    float** weightVarGradMeans;
+    
+    float** weightMeanGradVars;
+    float** weightVarGradVars;
 };
 
 __global__ void _fillUniform(float* arr, uint32_t size, Noise noise, float lowerBound, float upperBound) {
@@ -24,7 +36,7 @@ __global__ void _fillUniform(float* arr, uint32_t size, Noise noise, float lower
         uint32_t hash = (index ^ noise.seed1) * 0x4ba1bb47;
         hash ^= (hash >> 17);
         hash ^= (hash ^ noise.seed2) * 0xb7ebcb79;
-        hash ^= (hash >> 13);
+        hash ^= (hash << 13);
         arr[index] = (float)hash / 0xffffffff * (upperBound - lowerBound) + lowerBound;
     }
 }
@@ -53,14 +65,26 @@ void initNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noi
     net->weightDecay = weightDecay;
     net->meanBeta = meanBeta;
     net->varBeta = varBeta;
+    
     net->meanCor = 1.0f;
     net->varCor = 1.0f;
+    
     net->outputs = (float**)malloc(sizeof(float*) * (layers + 1));
     net->outputGrads = (float**)malloc(sizeof(float*) * (layers + 1));
+    
     net->weights = (float**)malloc(sizeof(float*) * layers);
-    net->weightGrads = (float**)malloc(sizeof(float*) * layers);
-    net->weightGradMeans = (float**)malloc(sizeof(float*) * layers);
-    net->weightGradVars = (float**)malloc(sizeof(float*) * layers);
+    net->weightMeans = (float**)malloc(sizeof(float*) * layers);
+    net->weightVars = (float**)malloc(sizeof(float*) * layers);
+    net->weightSamples = (float**)malloc(sizeof(float*) * layers);
+    
+    net->weightMeanGrads = (float**)malloc(sizeof(float*) * layers);
+    net->weightVarGrads = (float**)malloc(sizeof(float*) * layers);
+    
+    net->weightMeanGradMeans = (float**)malloc(sizeof(float*) * layers);
+    net->weightVarGradMeans = (float**)malloc(sizeof(float*) * layers);
+    
+    net->weightMeanGradVars = (float**)malloc(sizeof(float*) * layers);
+    net->weightVarGradVars = (float**)malloc(sizeof(float*) * layers);
     
     for (uint32_t i = 0; i < layers + 1; i++) {
         cudaMalloc(&net->outputs[i], sizeof(float) * net->batchSize * parameters[i]);
@@ -69,16 +93,25 @@ void initNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noi
     
     for (uint32_t i = 0; i < layers; i++) {
         cudaMalloc(&net->weights[i], sizeof(float) * parameters[i] * parameters[i + 1]);
-        cudaMalloc(&net->weightGrads[i], sizeof(float) * parameters[i] * parameters[i + 1]);
-        cudaMalloc(&net->weightGradMeans[i], sizeof(float) * parameters[i] * parameters[i + 1]);
-        cudaMalloc(&net->weightGradVars[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        cudaMalloc(&net->weightMeans[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        cudaMalloc(&net->weightVars[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        cudaMalloc(&net->weightSamples[i], sizeof(float) * parameters[i] * parameters[i + 1]);
         
-        // using relu initialization
-        fillUniform(net->weights[i], parameters[i] * parameters[i + 1], noise, -1.0f / sqrtf(parameters[i]), 1.0f / sqrtf(parameters[i]));
-        fill(net->weightGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
-        fill(net->weightGradVars[i], parameters[i] * parameters[i + 1], 0.0f);
+        cudaMalloc(&net->weightMeanGrads[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        cudaMalloc(&net->weightVarGrads[i], sizeof(float) * parameters[i] * parameters[i + 1]);
         
-        // printTensor(net->weights[i], parameters[i], parameters[i + 1]);
+        cudaMalloc(&net->weightMeanGradMeans[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        cudaMalloc(&net->weightVarGradMeans[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        
+        cudaMalloc(&net->weightMeanGradVars[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        cudaMalloc(&net->weightVarGradVars[i], sizeof(float) * parameters[i] * parameters[i + 1]);
+        
+        fillUniform(net->weightMeans[i], parameters[i] * parameters[i + 1], noise, -1.0f / sqrtf(parameters[i]), 1.0f / sqrtf(parameters[i]));
+        fill(net->weightVars[i], parameters[i] * parameters[i + 1], 1.0f);
+        fill(net->weightMeanGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
+        fill(net->weightVarGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
+        fill(net->weightMeanGradVars[i], parameters[i] * parameters[i + 1], 0.0f);
+        fill(net->weightVarGradVars[i], parameters[i] * parameters[i + 1], 0.0f);
     }
 }
 
@@ -92,7 +125,7 @@ void reluForward(float *dTensor, uint32_t size) {
     _reluForward<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 0x400>>>(dTensor, size);
 }
 
-void forward(cublasHandle_t *cublasHandle, Network* net) {
+void forwardNoiseless(cublasHandle_t *cublasHandle, Network* net) {
     const float ONE = 1.0f;
     const float ZERO = 0.0f;
     
@@ -100,7 +133,7 @@ void forward(cublasHandle_t *cublasHandle, Network* net) {
         cublasSgemm(*cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N,
             net->parameters[i + 1], net->batchSize, net->parameters[i],
             &ONE,
-            net->weights[i], net->parameters[i + 1],
+            net->weightMeans[i], net->parameters[i + 1],
             net->outputs[i], net->parameters[i],
             &ZERO,
             net->outputs[i + 1], net->parameters[i + 1]);
@@ -111,7 +144,7 @@ void forward(cublasHandle_t *cublasHandle, Network* net) {
     cublasSgemm(*cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N,
         net->parameters[net->layers], net->batchSize, net->parameters[net->layers - 1],
         &ONE,
-        net->weights[net->layers - 1], net->parameters[net->layers],
+        net->weightMeans[net->layers - 1], net->parameters[net->layers],
         net->outputs[net->layers - 1], net->parameters[net->layers - 1],
         &ZERO,
         net->outputs[net->layers], net->parameters[net->layers]);
@@ -145,7 +178,7 @@ void integratedAdamUpdate(float *dTensor, float *dTensorGrad, float *dTensorMean
     _integratedAdamUpdate<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 0x400>>>(dTensor, dTensorGrad, dTensorMean, dTensorVar, size, *net);
 }
 
-void backward(cublasHandle_t *cublasHandle, Network* net) {
+void backwardNoiseless(cublasHandle_t *cublasHandle, Network* net) {
     const float ONE = 1.0f;
     const float ZERO = 0.0f;
     
@@ -158,7 +191,128 @@ void backward(cublasHandle_t *cublasHandle, Network* net) {
         net->outputGrads[net->layers], net->parameters[net->layers],
         net->outputs[net->layers - 1], net->parameters[net->layers - 1],
         &ZERO,
-        net->weightGrads[net->layers - 1], net->parameters[net->layers]);
+        net->weightMeanGrads[net->layers - 1], net->parameters[net->layers]);
+        
+    cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
+        net->parameters[net->layers - 1], net->batchSize, net->parameters[net->layers],
+        &ONE,
+        net->weightMeans[net->layers - 1], net->parameters[net->layers],
+        net->outputGrads[net->layers], net->parameters[net->layers],
+        &ZERO,
+        net->outputGrads[net->layers - 1], net->parameters[net->layers - 1]);
+                
+    for (uint32_t i = net->layers - 1; i--;) {
+        reluBackward(net->outputs[i + 1], net->outputGrads[i + 1], net->batchSize * net->parameters[i + 1]);
+        cublasSgemm(*cublasHandle, CUBLAS_OP_N, CUBLAS_OP_T,
+            net->parameters[i + 1], net->parameters[i], net->batchSize,
+            &ONE,
+            net->outputGrads[i + 1], net->parameters[i + 1],
+            net->outputs[i], net->parameters[i],
+            &ZERO,
+            net->weightMeanGrads[i], net->parameters[i + 1]);
+            
+        cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
+            net->parameters[i], net->batchSize, net->parameters[i + 1],
+            &ONE,
+            net->weightMeans[i], net->parameters[i + 1],
+            net->outputGrads[i + 1], net->parameters[i + 1],
+            &ZERO,
+            net->outputGrads[i], net->parameters[i]);
+    }
+    
+    for (uint32_t i = 0; i < net->layers; i++) {
+        integratedAdamUpdate(net->weightMeans[i], net->weightMeanGrads[i], net->weightMeanGradMeans[i], net->weightMeanGradVars[i], net->parameters[i] * net->parameters[i + 1], net);
+    }
+}
+
+__global__ void _fillGaussian(float* arr, uint32_t size, Noise noise, float mean, float variance) {
+    uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size) {
+        uint32_t hash = (index ^ noise.seed1) * 0x4ba1bb47;
+        hash ^= (hash >> 17);
+        float u1 = (float)hash / 0xffffffff;
+        hash ^= (hash ^ noise.seed2) * 0xb7ebcb79;
+        hash ^= (hash << 13);
+        arr[index] = sqrtf(-2.0f * logf(u1)) * cosf(6.28318530718f / 0xffffffff * hash);
+    }
+}
+
+void fillGaussian(float* arr, uint32_t size, Noise* noise, float mean, float variance) {
+    genNoise(noise);
+    _fillGaussian<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(arr, size, *noise, mean, variance);
+}
+
+__global__ void _genWeightNoise(float* weight, float* weightMean, float* weightVar, float* weightSample, uint32_t size) {
+    uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size) {
+        weight[index] = weightMean[index] + weightVar[index] * weightSample[index];
+    }
+}
+
+void genWeightNoise(float* weight, float* weightMean, float* weightVar, float* weightSample, uint32_t size) {
+    _genWeightNoise<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 1024>>>(weight, weightMean, weightVar, weightSample, size);
+}
+
+void forwardNoisy(cublasHandle_t *cublasHandle, Network* net, Noise* noise) {
+    const float ONE = 1.0f;
+    const float ZERO = 0.0f;
+    
+    for (uint32_t i = 0; i < net->layers - 1; i++) {
+        fillGaussian(net->weightSamples[i], net->parameters[i] * net->parameters[i + 1], noise, 0.0f, 1.0f);
+        genWeightNoise(net->weights[i], net->weightMeans[i], net->weightVars[i], net->weightSamples[i], net->parameters[i] * net->parameters[i + 1]);
+        cublasSgemm(*cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N,
+            net->parameters[i + 1], net->batchSize, net->parameters[i],
+            &ONE,
+            net->weights[i], net->parameters[i + 1],
+            net->outputs[i], net->parameters[i],
+            &ZERO,
+            net->outputs[i + 1], net->parameters[i + 1]);
+            
+        reluForward(net->outputs[i + 1], net->batchSize * net->parameters[i + 1]);
+    }
+    
+    fillGaussian(net->weightSamples[net->layers - 1], net->parameters[net->layers - 1] * net->parameters[net->layers], noise, 0.0f, 1.0f);
+    genWeightNoise(net->weights[net->layers - 1], net->weightMeans[net->layers - 1], net->weightVars[net->layers - 1], net->weightSamples[net->layers - 1], net->parameters[net->layers - 1] * net->parameters[net->layers]);
+    cublasSgemm(*cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N,
+        net->parameters[net->layers], net->batchSize, net->parameters[net->layers - 1],
+        &ONE,
+        net->weights[net->layers - 1], net->parameters[net->layers],
+        net->outputs[net->layers - 1], net->parameters[net->layers - 1],
+        &ZERO,
+        net->outputs[net->layers], net->parameters[net->layers]);
+}
+
+__global__ void _integratedNoiseAdamUpdate(float *dTensor, float *dTensorGrad, float *dTensorSamples, float *dTensorMean, float *dTensorVar, uint32_t size, Network net) {
+    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+    float grad = dTensorGrad[idx] * dTensorSamples[idx];
+    float mean = net.meanBeta * dTensorMean[idx] + (1.0f - net.meanBeta) * grad;
+    float var = net.varBeta * dTensorVar[idx] + (1.0f - net.varBeta) * grad * grad;
+    float meanCor = mean / (1.0f - net.meanCor);
+    float varCor = var / (1.0f - net.varCor);
+    dTensorMean[idx] = mean;
+    dTensorVar[idx] = var;
+    dTensor[idx] += net.learningRate * (meanCor / (sqrtf(varCor) + 1e-8f) - net.weightDecay * dTensor[idx]);
+}
+
+void integratedNoiseAdamUpdate(float *dTensor, float *dTensorGrad, float *dTensorSamples, float *dTensorMean, float *dTensorVar, uint32_t size, Network *net) {
+    _integratedNoiseAdamUpdate<<<(size >> 10) + (size & 0x3ff ? 1 : 0), 0x400>>>(dTensor, dTensorGrad, dTensorSamples, dTensorMean, dTensorVar, size, *net);
+}
+
+void backwardNoisy(cublasHandle_t *cublasHandle, Network* net) {
+    const float ONE = 1.0f;
+    const float ZERO = 0.0f;
+    
+    net->meanCor *= net->meanBeta;
+    net->varCor *= net->varBeta;
+    
+    cublasSgemm(*cublasHandle, CUBLAS_OP_N, CUBLAS_OP_T,
+        net->parameters[net->layers], net->parameters[net->layers - 1], net->batchSize,
+        &ONE,
+        net->outputGrads[net->layers], net->parameters[net->layers],
+        net->outputs[net->layers - 1], net->parameters[net->layers - 1],
+        &ZERO,
+        net->weightMeanGrads[net->layers - 1], net->parameters[net->layers]);
         
     cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
         net->parameters[net->layers - 1], net->batchSize, net->parameters[net->layers],
@@ -176,7 +330,7 @@ void backward(cublasHandle_t *cublasHandle, Network* net) {
             net->outputGrads[i + 1], net->parameters[i + 1],
             net->outputs[i], net->parameters[i],
             &ZERO,
-            net->weightGrads[i], net->parameters[i + 1]);
+            net->weightMeanGrads[i], net->parameters[i + 1]);
             
         cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
             net->parameters[i], net->batchSize, net->parameters[i + 1],
@@ -188,13 +342,14 @@ void backward(cublasHandle_t *cublasHandle, Network* net) {
     }
     
     for (uint32_t i = 0; i < net->layers; i++) {
-        integratedAdamUpdate(net->weights[i], net->weightGrads[i], net->weightGradMeans[i], net->weightGradVars[i], net->parameters[i] * net->parameters[i + 1], net);
+        integratedAdamUpdate(net->weightMeans[i], net->weightMeanGrads[i], net->weightMeanGradMeans[i], net->weightMeanGradVars[i], net->parameters[i] * net->parameters[i + 1], net);
+        integratedNoiseAdamUpdate(net->weightVars[i], net->weightVarGrads[i], net->weightSamples[i], net->weightVarGradMeans[i], net->weightVarGradVars[i], net->parameters[i] * net->parameters[i + 1], net);
     }
 }
 
 void copyParams(Network* net, Network* net2) {
     for (uint32_t i = 0; i < net->layers; i++) {
-        cudaMemcpy(net2->weights[i], net->weights[i], net->parameters[i] * net->parameters[i + 1] * sizeof(float), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(net2->weightMeans[i], net->weightMeans[i], net->parameters[i] * net->parameters[i + 1] * sizeof(float), cudaMemcpyDeviceToDevice);
     }
 }
 
@@ -217,7 +372,7 @@ void printParams(Network* net) {
         printf("Output\n");
         printTensor(net->outputs[i], net->parameters[i], net->batchSize);
         printf("Weight\n");
-        printTensor(net->weights[i], net->parameters[i + 1], net->parameters[i]);
+        printTensor(net->weightMeans[i], net->parameters[i + 1], net->parameters[i]);
     }
     printf("Output\n");
     printTensor(net->outputs[net->layers], net->parameters[net->layers], net->batchSize);
@@ -228,8 +383,8 @@ void printBackParams(Network* net) {
         printf("Layer %d\n", i);
         printf("outputGrads\n");
         printTensor(net->outputGrads[i], net->parameters[i + 1], net->batchSize);
-        printf("weightGrads\n");
-        printTensor(net->weightGrads[i], net->parameters[i + 1], net->parameters[i]);
+        printf("weightMeanGrads\n");
+        printTensor(net->weightMeanGrads[i], net->parameters[i + 1], net->parameters[i]);
     }
     printf("outputGrads\n");
     printTensor(net->outputGrads[0], net->parameters[1], net->batchSize);
