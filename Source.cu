@@ -4,6 +4,7 @@
 #define BOARD_SIZE (BOARD_WIDTH * BOARD_WIDTH)
 #define ACTIONS 4
 #define INPUTS (BOARD_SIZE + 1)
+#define SCORE_SIZE 100
 
 #define QUEUE_SIZE 10000
 #define MIN_QUEUE_SIZE 1000
@@ -37,7 +38,10 @@ int main(int argc, char **argv) {
     float bestScores[BATCH_SIZE];
     
     float board[BOARD_SIZE]{};
+    float score[SCORE_SIZE]{};
     uint8_t px, py, cx, cy;
+    uint32_t scoreIdx = 0;
+    float scoreSum = 0.0f;
     
     px = genNoise(&noise) % BOARD_WIDTH;
     py = genNoise(&noise) % BOARD_WIDTH;
@@ -53,9 +57,9 @@ int main(int argc, char **argv) {
         memcpy(states + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
         
         uint8_t action;
-        if (genNoise(&noise) % 100 < 10) {
-            action = genNoise(&noise) % ACTIONS;
-        } else {
+        // if (genNoise(&noise) % 100 < 10) {
+        //     action = genNoise(&noise) % ACTIONS;
+        // } else {
             net.batchSize = 1;
             cudaMemcpy(net.outputs[0], board, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
@@ -67,7 +71,7 @@ int main(int argc, char **argv) {
                     action = i;
                 }
             }
-        }
+        // }
         
         printf("\033[H\033[J");
         printf("%d/%d\n", epoch + 1, EPOCHES);
@@ -94,15 +98,19 @@ int main(int argc, char **argv) {
             case 3: if (py < BOARD_WIDTH - 1) py++; break;
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
+        actions[queueIdx] = action;
+        rewards[queueIdx] = cx == px && cy == py;
+        score[scoreIdx] = rewards[queueIdx];
+        scoreSum += rewards[queueIdx];
+        scoreIdx *= ++scoreIdx != SCORE_SIZE;
+        scoreSum -= score[scoreIdx];
+        printf("Average score: %f\n", scoreSum / SCORE_SIZE);
         
         while (cx == px && cy == py) {
             cx = genNoise(&noise) % BOARD_WIDTH;
             cy = genNoise(&noise) % BOARD_WIDTH;
         }
         board[cy * BOARD_WIDTH + cx] = -1.0f;
-        
-        actions[queueIdx] = action;
-        rewards[queueIdx] = cx == px && cy == py;
         memcpy(nextStates + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
         queueIdx *= ++queueIdx != QUEUE_SIZE;
         
