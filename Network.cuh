@@ -105,7 +105,8 @@ void initNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noi
         
         float std = sqrtf(3.0f / parameters[i]);
         fillUniform(net->weightMeans[i], parameters[i] * parameters[i + 1], noise, -std, std);
-        fill(net->weightVars[i], parameters[i] * parameters[i + 1], 0.017f);
+        // fill(net->weightVars[i], parameters[i] * parameters[i + 1], 0.017f);
+        fillUniform(net->weightVars[i], parameters[i] * parameters[i + 1], noise, 0.0f, 1.0f / parameters[i]);
         fill(net->weightMeanGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
         fill(net->weightVarGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
         fill(net->weightMeanGradVars[i], parameters[i] * parameters[i + 1], 0.0f);
@@ -347,7 +348,8 @@ void backwardNoisy(cublasHandle_t *cublasHandle, Network* net) {
 
 void copyParams(Network* net, Network* net2) {
     for (uint32_t i = 0; i < net->layers; i++) {
-        cudaMemcpy(net2->weightMeans[i], net->weightMeans[i], net->parameters[i] * net->parameters[i + 1] * sizeof(float), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(net->weightMeans[i], net2->weightMeans[i], net->parameters[i] * net->parameters[i + 1] * sizeof(float), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(net->weightVars[i], net2->weightVars[i], net->parameters[i] * net->parameters[i + 1] * sizeof(float), cudaMemcpyDeviceToDevice);
     }
 }
 
