@@ -10,13 +10,14 @@
 #define QUEUE_SIZE 65536
 #define MIN_QUEUE_SIZE 8192
 #define BATCH_SIZE 512
-#define LEARNING_RATE 0.001f
+#define LEARNING_RATE 0.01f
 #define WEIGHT_DECAY 0.0000f
 #define REWARD_DECAY 0.99f
 #define EPOCHES 65536
 #define UNFREEZE 4
 
 int main(int argc, char **argv) {
+    printf("\033[H\033[J");
     Noise noise;
     initNoise(&noise);
     
@@ -73,19 +74,19 @@ int main(int argc, char **argv) {
             }
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
-        // forwardNoisy(&handle, &net, &noise);
-        forwardNoiseless(&handle, &net);
-        cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         float epsilon = (epoch / (EPOCHES * 0.5f));
         epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
+        forwardNoisy(&handle, &net, &noise, epsilon);
+        // forwardNoiseless(&handle, &net);
+        cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         uint8_t action = 0;
         uint32_t pos = py * BOARD_WIDTH + px;
         uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
-        float bestScore = outputs[(pos - bias) * ACTIONS] + genNormal(&noise) * epsilon;
-        // float bestScore = outputs[(pos - bias) * ACTIONS];
+        // float bestScore = outputs[(pos - bias) * ACTIONS] + genNormal(&noise) * epsilon;
+        float bestScore = outputs[(pos - bias) * ACTIONS];
         for (uint8_t i = 1; i < ACTIONS; i++) {
-            float sample = outputs[(pos - bias) * ACTIONS + i] + genNormal(&noise) * epsilon;
-            // float sample = outputs[(pos - bias) * ACTIONS + i];
+            // float sample = outputs[(pos - bias) * ACTIONS + i] + genNormal(&noise) * epsilon;
+            float sample = outputs[(pos - bias) * ACTIONS + i];
             if (sample > bestScore) {
                 bestScore = sample;
                 action = i;
@@ -190,17 +191,22 @@ int main(int argc, char **argv) {
             sampledIdxs[i] = genUint(&noise) % idxCap;
         }
         
-        if (epoch % UNFREEZE == 0) {
-            copyParams(&frozenNet, &net);
-        }
+        // if (epoch % UNFREEZE == 0) {
+            // copyParams(&frozenNet, &net);
+        // }
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
-            cudaMemcpy(frozenNet.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-            cudaMemcpy(frozenNet.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+            // cudaMemcpy(frozenNet.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            // cudaMemcpy(frozenNet.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
-        forwardNoiseless(&handle, &frozenNet);
+        // forwardNoiseless(&handle, &frozenNet);
         // forwardNoisy(&handle, &frozenNet, &noise);
-        cudaMemcpy(outputs, frozenNet.outputs[frozenNet.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        // cudaMemcpy(outputs, frozenNet.outputs[frozenNet.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        forwardNoiseless(&handle, &net);
+        // forwardNoisy(&handle, &net, &noise);
+        cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             // float bestScore = outputs[i * ACTIONS];
@@ -237,8 +243,8 @@ int main(int argc, char **argv) {
                 maxGrad = outputGrads[i * ACTIONS + actions[sampledIdxs[i]]];
             }
         }
-        printf("\033[2KMin grad: %f\n", minGrad);
         printf("\033[2KMax grad: %f\n", maxGrad);
+        printf("\033[2KMin grad: %f\n", minGrad);
         cudaMemcpy(net.outputGrads[net.layers], outputGrads, ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyHostToDevice);
         // backwardNoisy(&handle, &net);
         backwardNoiseless(&handle, &net);
