@@ -168,20 +168,37 @@ int main(int argc, char *argv[])
         net.batchSize = BOARD_SIZE - 1;
         forwardPropagate(&handle, &net);
         cudaMemcpy(output, net.outputs[net.layers], (BOARD_SIZE - 1) * ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
+        
+        float maxScore = output[0];
+        float minScore = output[0];
+        for (uint32_t i = 1; i < (BOARD_SIZE - 1) * ACTIONS; i++) {
+            if (output[i] > maxScore) {
+                maxScore = output[i];
+            }
+            if (output[i] < minScore) {
+                minScore = output[i];
+            }
+        }
+        
         net.batchSize = NUM_FINAL_STATES;
         printf("\033[H\033[J");
         i = 0;
         for (uint8_t dy = 0; dy < BOARD_WIDTH; dy++) {
             for (uint8_t dx = 0; dx < BOARD_WIDTH; dx++) {
                 if (dx == cx && dy == cy) {
+                    printf("\x1b[38;2;%d;%d;0m", 0, 255);
                     printf("$$");
                 } else {
                     uint8_t bestAction = 0;
+                    float bestScore = output[i * ACTIONS];
                     for (uint8_t a = 1; a < ACTIONS; a++) {
                         if (output[i * ACTIONS + a] > output[i * ACTIONS + bestAction]) {
                             bestAction = a;
+                            bestScore = output[i * ACTIONS + a];
                         }
                     }
+                    uint8_t g = (bestScore - minScore) / (maxScore - minScore) * 255;
+                    printf("\x1b[38;2;%d;%d;0m", 255 - g, g);
                     switch (bestAction) {
                         case 0: printf("<<"); break;
                         case 1: printf(">>"); break;
