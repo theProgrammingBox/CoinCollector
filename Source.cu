@@ -53,6 +53,8 @@ int main(int argc, char **argv) {
     board[py * BOARD_WIDTH + px] = 1.0f;
     board[cy * BOARD_WIDTH + cx] = -1.0f;
     
+    float maxScore = -INFINITY;
+    float minScore = INFINITY;
     const float one = 1.0f;
     for (uint32_t epoch = 0; epoch < EPOCHES; epoch++) {
         memcpy(states + queueIdx * BOARD_SIZE, board, BOARD_SIZE * sizeof(float));
@@ -79,7 +81,7 @@ int main(int argc, char **argv) {
         forwardNoiseless(&handle, &net);
         // cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
-        if (genNoise(&noise) % 64 < (epoch < EPOCHES * 0.1 ? 64 : 0)) {
+        if (genNoise(&noise) % 64 < (epoch < EPOCHES * 0.1 ? 64 : epoch < EPOCHES * 0.2 ? 48 : epoch < EPOCHES * 0.3 ? 32 : epoch < EPOCHES * 0.4 ? 16 : 0)) {
             action = genNoise(&noise) % ACTIONS;
         } else {
             action = 0;
@@ -92,16 +94,8 @@ int main(int argc, char **argv) {
             }
         }
         
-        float maxScore = outputs[0];
-        float minScore = outputs[0];
-        for (uint8_t i = 1; i < ACTIONS * VIS_SIZE; i++) {
-            if (outputs[i] > maxScore) {
-                maxScore = outputs[i];
-            }
-            if (outputs[i] < minScore) {
-                minScore = outputs[i];
-            }
-        }
+        float maxScore2 = -INFINITY;
+        float minScore2 = INFINITY;
         printf("\033[H\033[J");
         printf("%d/%d\n", epoch, EPOCHES);
         idx = 0;
@@ -119,6 +113,8 @@ int main(int argc, char **argv) {
                             act = i;
                         }
                     }
+                    if (bestScore > maxScore2) maxScore2 = bestScore;
+                    if (bestScore < minScore2) minScore2 = bestScore;
                     if (x == px && y == py) {
                         printf("\x1b[38;2;255;0;255m");
                     } else {
@@ -137,6 +133,8 @@ int main(int argc, char **argv) {
             printf("\n");
         }
         printf("\x1b[38;2;255;255;255m");
+        maxScore = maxScore2;
+        minScore = minScore2;
         
         board[py * BOARD_WIDTH + px] = 0.0f;
         switch (action) {

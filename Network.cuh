@@ -103,8 +103,9 @@ void initNetwork(Network* net, uint32_t* parameters, uint32_t layers, Noise* noi
         cudaMalloc(&net->weightMeanGradVars[i], sizeof(float) * parameters[i] * parameters[i + 1]);
         cudaMalloc(&net->weightVarGradVars[i], sizeof(float) * parameters[i] * parameters[i + 1]);
         
-        fillUniform(net->weightMeans[i], parameters[i] * parameters[i + 1], noise, -1.0f / sqrtf(parameters[i]), 1.0f / sqrtf(parameters[i]));
-        fill(net->weightVars[i], parameters[i] * parameters[i + 1], 0);//1.0f / sqrtf(parameters[i]));
+        float std = sqrtf(3.0f / parameters[i]);
+        fillUniform(net->weightMeans[i], parameters[i] * parameters[i + 1], noise, -std, std);
+        fill(net->weightVars[i], parameters[i] * parameters[i + 1], 0.017f);
         fill(net->weightMeanGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
         fill(net->weightVarGradMeans[i], parameters[i] * parameters[i + 1], 0.0f);
         fill(net->weightMeanGradVars[i], parameters[i] * parameters[i + 1], 0.0f);
