@@ -7,13 +7,13 @@
 #define INPUTS (BOARD_SIZE + 1)
 #define SCORE_SIZE 1000
 
-#define QUEUE_SIZE 10000
-#define MIN_QUEUE_SIZE 1000
-#define BATCH_SIZE 64
+#define QUEUE_SIZE 16384
+#define MIN_QUEUE_SIZE 2048
+#define BATCH_SIZE 1024
 #define LEARNING_RATE 0.001f
-#define WEIGHT_DECAY 0.000f
+#define WEIGHT_DECAY 0.00f
 #define REWARD_DECAY 0.99f
-#define EPOCHES 100000
+#define EPOCHES 40000
 
 int main(int argc, char **argv) {
     Noise noise;
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
         forwardNoiseless(&handle, &net);
         // cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * sizeof(float), cudaMemcpyDeviceToHost);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
-        if (genNoise(&noise) % 100 < 10) {
+        if (genNoise(&noise) % 64 < (epoch < EPOCHES * 0.1 ? 64 : 0)) {
             action = genNoise(&noise) % ACTIONS;
         } else {
             action = 0;
@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
         scoreSum -= score[scoreIdx];
         uint32_t scoreIdxCap = epoch >= SCORE_SIZE ? SCORE_SIZE : epoch + 1;
         printf("Average score: %f\n", scoreSum / scoreIdxCap);
-        if (epoch > SCORE_SIZE && scoreSum / scoreIdxCap > 0.28f) {
+        if (epoch > EPOCHES * 0.9 && scoreSum / scoreIdxCap > 0.31f) {
             struct timeval tv;
             tv.tv_sec = 0;
             tv.tv_usec = 1000000;
