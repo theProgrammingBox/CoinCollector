@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
         
-        float epsilon = 10.1f;//(epoch / (EPOCHES * 0.4f));
+        float epsilon = 1.1f;//(epoch / (EPOCHES * 0.4f));
         // epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
         // forwardNoisy(&handle, &net, &noise, epsilon);
         forwardNoiseless(&handle, &net);
