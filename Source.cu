@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
         printf("\033[2KAverage score: %f\n", scoreSum / scoreIdxCap);
         printf("\033[2KMax score: %f\n", maxScore);
         printf("\033[2KMin score: %f\n", minScore);
-        if (epoch > EPOCHES * 0.9 && scoreSum / scoreIdxCap > 0.31f) {
+        if (epoch > EPOCHES * 0.9 && scoreSum / scoreIdxCap > 0.34f) {
             struct timeval tv;
             tv.tv_sec = 0;
             tv.tv_usec = 1000000;
@@ -209,18 +209,18 @@ int main(int argc, char **argv) {
         // cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
-            float bestScore = outputs[i * ACTIONS];
-            for (uint8_t j = 1; j < ACTIONS; j++) {
-                if (outputs[i * ACTIONS + j] > bestScore) {
-                    bestScore = outputs[i * ACTIONS + j];
-                }
-            }
-            bestScores[i] = bestScore;
-            // float avgScore = 0.0f;
-            // for (uint8_t j = 0; j < ACTIONS; j++) {
-            //     avgScore += outputs[i * ACTIONS + j];
+            // float bestScore = outputs[i * ACTIONS];
+            // for (uint8_t j = 1; j < ACTIONS; j++) {
+            //     if (outputs[i * ACTIONS + j] > bestScore) {
+            //         bestScore = outputs[i * ACTIONS + j];
+            //     }
             // }
-            // bestScores[i] = avgScore / ACTIONS;
+            // bestScores[i] = bestScore;
+            float avgScore = 0.0f;
+            for (uint8_t j = 0; j < ACTIONS; j++) {
+                avgScore += outputs[i * ACTIONS + j];
+            }
+            bestScores[i] = avgScore / ACTIONS;
         }
         
         net.batchSize = BATCH_SIZE;
