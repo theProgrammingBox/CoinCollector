@@ -75,29 +75,30 @@ int main(int argc, char **argv) {
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
         
-        float epsilon = 0.1f;//(epoch / (EPOCHES * 0.4f));
+        float epsilon = 10.1f;//(epoch / (EPOCHES * 0.4f));
         // epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
-        forwardNoisy(&handle, &net, &noise, epsilon);
-        // forwardNoiseless(&handle, &net);
+        // forwardNoisy(&handle, &net, &noise, epsilon);
+        forwardNoiseless(&handle, &net);
         net.batchSize = BATCH_SIZE;
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         uint8_t action = 0;
         uint32_t pos = py * BOARD_WIDTH + px;
         uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
-        // outputs[(pos - bias) * ACTIONS] += genNormal(&noise) * epsilon;
+        outputs[(pos - bias) * ACTIONS] += genNormal(&noise) * epsilon;
         float bestScore = outputs[(pos - bias) * ACTIONS];
         for (uint8_t i = 1; i < ACTIONS; i++) {
-            // outputs[(pos - bias) * ACTIONS + i] += genNormal(&noise) * epsilon;
+            outputs[(pos - bias) * ACTIONS + i] += genNormal(&noise) * epsilon;
             float sample = outputs[(pos - bias) * ACTIONS + i];
             if (sample > bestScore) {
                 bestScore = sample;
                 action = i;
             }
         }
+        action = genUint(&noise) % ACTIONS;
         
         float maxScore = -INFINITY;
         float minScore = INFINITY;
-        for (uint8_t i = 1; i < VIS_SIZE; i++) {
+        for (uint8_t i = 0; i < VIS_SIZE; i++) {
             float bestScore = outputs[i * ACTIONS];
             for (uint8_t j = 1; j < ACTIONS; j++) {
                 if (outputs[i * ACTIONS + j] > bestScore) {
@@ -111,6 +112,8 @@ int main(int argc, char **argv) {
                 minScore = bestScore;
             }
         }
+        float maxScore2 = -INFINITY;
+        float minScore2 = -INFINITY;
         printf("\033[H\033[2K");
         printf("%d/%d\n\033[2K", epoch, EPOCHES);
         idx = 0;
@@ -122,17 +125,19 @@ int main(int argc, char **argv) {
                     printf("$$");
                 } else {
                     uint8_t act = 0;
-                    float bestScore = outputs[idx * ACTIONS];
+                    float h = outputs[idx * ACTIONS];
                     for (uint8_t i = 1; i < ACTIONS; i++) {
-                        if (outputs[idx * ACTIONS + i] > bestScore) {
-                            bestScore = outputs[idx * ACTIONS + i];
+                        if (outputs[idx * ACTIONS + i] > h) {
+                            h = outputs[idx * ACTIONS + i];
                             act = i;
                         }
                     }
+                        if (h > maxScore2) maxScore2 = h;
                     if (x == px && y == py) {
                         printf("\x1b[38;2;255;0;255m");
                     } else {
-                        uint8_t g = (bestScore - minScore) / (maxScore - minScore) * 255;
+                        if (h > minScore2) minScore2 = h;
+                        uint8_t g = (h - minScore) / (maxScore - minScore) * 255;
                         printf("\x1b[38;2;%d;%d;0m", 255 - g, g);
                     }
                     switch (act) {
@@ -147,6 +152,8 @@ int main(int argc, char **argv) {
             printf("\n\033[2K");
         }
         printf("\x1b[38;2;255;255;255m");
+        printf("Max score2: %f\n\033[2K", maxScore2);
+        printf("Min score2: %f\n\033[2K", minScore2);
         
         board[py * BOARD_WIDTH + px] = 0.0f;
         switch (action) {
@@ -212,18 +219,18 @@ int main(int argc, char **argv) {
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
-            // float bestScore = outputs[i * ACTIONS];
-            // for (uint8_t j = 1; j < ACTIONS; j++) {
-            //     if (outputs[i * ACTIONS + j] > bestScore) {
-            //         bestScore = outputs[i * ACTIONS + j];
-            //     }
-            // }
-            // bestScores[i] = bestScore;
-            float avgScore = 0.0f;
-            for (uint8_t j = 0; j < ACTIONS; j++) {
-                avgScore += outputs[i * ACTIONS + j];
+            float bestScore = outputs[i * ACTIONS];
+            for (uint8_t j = 1; j < ACTIONS; j++) {
+                if (outputs[i * ACTIONS + j] > bestScore) {
+                    bestScore = outputs[i * ACTIONS + j];
+                }
             }
-            bestScores[i] = avgScore / ACTIONS;
+            bestScores[i] = bestScore;
+            // float avgScore = 0.0f;
+            // for (uint8_t j = 0; j < ACTIONS; j++) {
+            //     avgScore += outputs[i * ACTIONS + j];
+            // }
+            // bestScores[i] = avgScore / ACTIONS;
         }
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
