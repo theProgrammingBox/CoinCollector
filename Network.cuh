@@ -232,7 +232,7 @@ __global__ void _fillGaussian(float* arr, uint32_t size, Noise noise, float mean
         float u1 = (float)hash / 0xffffffff;
         hash ^= (hash ^ noise.seed2) * 0xb7ebcb79;
         hash ^= (hash << 13);
-        arr[index] = sqrtf(-2.0f * logf(u1)) * cosf(6.283185307179586476925286766559f / 0xffffffff * hash);
+        arr[index] = sqrtf(-2.0f * logf(u1)) * cosf(6.283185307179586476925286766559f / 0xffffffff * hash) * variance + mean;
     }
 }
 

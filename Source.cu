@@ -77,17 +77,17 @@ int main(int argc, char **argv) {
         
         float epsilon = (epoch / (EPOCHES * 0.4f));
         epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
-        // forwardNoisy(&handle, &net, &noise, epsilon);
-        forwardNoiseless(&handle, &net);
+        forwardNoisy(&handle, &net, &noise, epsilon);
+        // forwardNoiseless(&handle, &net);
         net.batchSize = BATCH_SIZE;
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         uint8_t action = 0;
         uint32_t pos = py * BOARD_WIDTH + px;
         uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
-        outputs[(pos - bias) * ACTIONS] += genNormal(&noise) * epsilon;
+        // outputs[(pos - bias) * ACTIONS] += genNormal(&noise) * epsilon;
         float bestScore = outputs[(pos - bias) * ACTIONS];
         for (uint8_t i = 1; i < ACTIONS; i++) {
-            outputs[(pos - bias) * ACTIONS + i] += genNormal(&noise) * epsilon;
+            // outputs[(pos - bias) * ACTIONS + i] += genNormal(&noise) * epsilon;
             float sample = outputs[(pos - bias) * ACTIONS + i];
             if (sample > bestScore) {
                 bestScore = sample;
