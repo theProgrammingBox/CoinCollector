@@ -75,26 +75,29 @@ int main(int argc, char **argv) {
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
         
-        float epsilon = 1.1f;//(epoch / (EPOCHES * 0.4f));
+        float epsilon = 0.1f;//(epoch / (EPOCHES * 0.4f));
         // epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
-        // forwardNoisy(&handle, &net, &noise, epsilon);
-        forwardNoiseless(&handle, &net);
+        forwardNoisy(&handle, &net, &noise, epsilon);
+        // forwardNoiseless(&handle, &net);
         net.batchSize = BATCH_SIZE;
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        // for (uint8_t i = 0; i < VIS_SIZE; i++) {
+        //     for (uint8_t j = 0; j < ACTIONS; j++) {
+        //         outputs[i * ACTIONS + j] += genNormal(&noise) * epsilon;
+        //     }
+        // }
         uint8_t action = 0;
         uint32_t pos = py * BOARD_WIDTH + px;
         uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
-        outputs[(pos - bias) * ACTIONS] += genNormal(&noise) * epsilon;
         float bestScore = outputs[(pos - bias) * ACTIONS];
         for (uint8_t i = 1; i < ACTIONS; i++) {
-            outputs[(pos - bias) * ACTIONS + i] += genNormal(&noise) * epsilon;
             float sample = outputs[(pos - bias) * ACTIONS + i];
             if (sample > bestScore) {
                 bestScore = sample;
                 action = i;
             }
         }
-        action = genUint(&noise) % ACTIONS;
+        // action = genUint(&noise) % ACTIONS;
         
         float maxScore = -INFINITY;
         float minScore = INFINITY;
@@ -112,8 +115,6 @@ int main(int argc, char **argv) {
                 minScore = bestScore;
             }
         }
-        float maxScore2 = -INFINITY;
-        float minScore2 = -INFINITY;
         printf("\033[H\033[2K");
         printf("%d/%d\n\033[2K", epoch, EPOCHES);
         idx = 0;
@@ -132,14 +133,12 @@ int main(int argc, char **argv) {
                             act = i;
                         }
                     }
-                    // if (x == px && y == py) {
-                    //     printf("\x1b[38;2;255;0;255m");
-                    // } else {
-                        // if (h > maxScore2) maxScore2 = h;
+                    if (x == px && y == py) {
+                        printf("\x1b[38;2;255;0;255m");
+                    } else {
                         uint8_t g = (h - minScore) / (maxScore - minScore) * 255;
                         printf("\x1b[38;2;%d;%d;0m", 255 - g, g);
-                    // }
-                    //     if (h > minScore2) minScore2 = h;
+                    }
                     switch (act) {
                         case 0: printf("<<"); break;
                         case 1: printf(">>"); break;
@@ -152,8 +151,6 @@ int main(int argc, char **argv) {
             printf("\n\033[2K");
         }
         printf("\x1b[38;2;255;255;255m");
-        printf("Max score2: %f\n\033[2K", maxScore2);
-        printf("Min score2: %f\n\033[2K", minScore2);
         
         board[py * BOARD_WIDTH + px] = 0.0f;
         switch (action) {
@@ -184,7 +181,7 @@ int main(int argc, char **argv) {
         printf("Average score: %f\n\033[2K", scoreSum / scoreIdxCap);
         printf("Max score: %f\n\033[2K", maxScore);
         printf("Min score: %f\n\033[2K", minScore);
-        if (epoch > EPOCHES * 0.9 && scoreSum / scoreIdxCap > 0.34f) {
+        if (epoch > EPOCHES * 0.9 && scoreSum / scoreIdxCap > 0.3f) {
             struct timeval tv;
             tv.tv_sec = 0;
             tv.tv_usec = 1000000;
