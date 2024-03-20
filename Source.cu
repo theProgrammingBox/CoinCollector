@@ -132,14 +132,14 @@ int main(int argc, char **argv) {
                             act = i;
                         }
                     }
-                        if (h > maxScore2) maxScore2 = h;
-                    if (x == px && y == py) {
-                        printf("\x1b[38;2;255;0;255m");
-                    } else {
-                        if (h > minScore2) minScore2 = h;
+                    // if (x == px && y == py) {
+                    //     printf("\x1b[38;2;255;0;255m");
+                    // } else {
+                        // if (h > maxScore2) maxScore2 = h;
                         uint8_t g = (h - minScore) / (maxScore - minScore) * 255;
                         printf("\x1b[38;2;%d;%d;0m", 255 - g, g);
-                    }
+                    // }
+                    //     if (h > minScore2) minScore2 = h;
                     switch (act) {
                         case 0: printf("<<"); break;
                         case 1: printf(">>"); break;
