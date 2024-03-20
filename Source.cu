@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
     uint32_t parameters[] = {INPUTS, 16, 16, ACTIONS};
     uint32_t layers = sizeof(parameters) / sizeof(uint32_t) - 1;
     initNetwork(&net, parameters, layers, &noise, LEARNING_RATE, BATCH_SIZE > VIS_SIZE ? BATCH_SIZE : VIS_SIZE, WEIGHT_DECAY);
-    initNetwork(&frozenNet, parameters, layers, &noise, LEARNING_RATE, BATCH_SIZE > VIS_SIZE ? BATCH_SIZE : VIS_SIZE, WEIGHT_DECAY);
+    initNetwork(&frozenNet, parameters, layers, &noise, LEARNING_RATE, BATCH_SIZE, WEIGHT_DECAY);
     
     float* states = (float*)malloc(BOARD_SIZE * QUEUE_SIZE * sizeof(float));
     uint8_t* actions = (uint8_t*)malloc(QUEUE_SIZE * sizeof(uint8_t));
@@ -74,10 +74,12 @@ int main(int argc, char **argv) {
             }
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
-        float epsilon = (epoch / (EPOCHES * 0.9f));
+        
+        float epsilon = (epoch / (EPOCHES * 0.4f));
         epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
         // forwardNoisy(&handle, &net, &noise, epsilon);
         forwardNoiseless(&handle, &net);
+        net.batchSize = BATCH_SIZE;
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         uint8_t action = 0;
         uint32_t pos = py * BOARD_WIDTH + px;
@@ -191,22 +193,22 @@ int main(int argc, char **argv) {
             sampledIdxs[i] = genUint(&noise) % idxCap;
         }
         
-        if (epoch % UNFREEZE == 0) {
-            copyParams(&frozenNet, &net);
-        }
+        // if (epoch % UNFREEZE == 0) {
+        //     copyParams(&frozenNet, &net);
+        // }
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
-            cudaMemcpy(frozenNet.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-            cudaMemcpy(frozenNet.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
-            // cudaMemcpy(net.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-            // cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+            // cudaMemcpy(frozenNet.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            // cudaMemcpy(frozenNet.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
-        forwardNoiseless(&handle, &frozenNet);
-        // forwardNoisy(&handle, &frozenNet, &noise);
-        cudaMemcpy(outputs, frozenNet.outputs[frozenNet.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
-        // forwardNoiseless(&handle, &net);
-        // // forwardNoisy(&handle, &net, &noise);
-        // cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        // forwardNoiseless(&handle, &frozenNet);
+        // // forwardNoisy(&handle, &frozenNet, &noise);
+        // cudaMemcpy(outputs, frozenNet.outputs[frozenNet.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+        forwardNoiseless(&handle, &net);
+        // forwardNoisy(&handle, &net, &noise);
+        cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             // float bestScore = outputs[i * ACTIONS];
@@ -223,7 +225,6 @@ int main(int argc, char **argv) {
             bestScores[i] = avgScore / ACTIONS;
         }
         
-        net.batchSize = BATCH_SIZE;
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             cudaMemcpy(net.outputs[0] + i * INPUTS, states + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
