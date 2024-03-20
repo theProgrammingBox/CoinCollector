@@ -10,7 +10,7 @@
 #define QUEUE_SIZE 65536
 #define MIN_QUEUE_SIZE 8192
 #define BATCH_SIZE 64
-#define LEARNING_RATE 0.001f
+#define LEARNING_RATE 0.0001f
 #define WEIGHT_DECAY 0.0000f
 #define REWARD_DECAY 0.99f
 #define EPOCHES 65536
@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
         
         float epsilon = 0.1f;//(epoch / (EPOCHES * 0.4f));
         // epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
-        forwardNoisy(&handle, &net, &noise, epsilon);
+        forwardNoisy(&handle, &net, &noise, 1, 1);
         // forwardNoiseless(&handle, &net);
         net.batchSize = BATCH_SIZE;
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
@@ -208,11 +208,11 @@ int main(int argc, char **argv) {
             cudaMemcpy(net.outputs[0] + i * INPUTS, nextStates + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
-        // forwardNoiseless(&handle, &frozenNet);
-        // // forwardNoisy(&handle, &frozenNet, &noise);
+        // // forwardNoiseless(&handle, &frozenNet);
+        // forwardNoisy(&handle, &frozenNet, &noise, 1);
         // cudaMemcpy(outputs, frozenNet.outputs[frozenNet.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         forwardNoiseless(&handle, &net);
-        // forwardNoisy(&handle, &net, &noise);
+        // forwardNoisy(&handle, &net, &noise, 1);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
@@ -235,7 +235,7 @@ int main(int argc, char **argv) {
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
         forwardNoiseless(&handle, &net);
-        // forwardNoisy(&handle, &net, &noise);
+        // forwardNoisy(&handle, &net, &noise, 0);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         memset(outputGrads, 0, ACTIONS * BATCH_SIZE * sizeof(float));
         float minGrad = INFINITY;
