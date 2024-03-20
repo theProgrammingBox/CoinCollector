@@ -75,8 +75,8 @@ int main(int argc, char **argv) {
         }
         board[py * BOARD_WIDTH + px] = 1.0f;
         
-        float epsilon = (epoch / (EPOCHES * 0.4f));
-        epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
+        float epsilon = 0.1f;//(epoch / (EPOCHES * 0.4f));
+        // epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
         forwardNoisy(&handle, &net, &noise, epsilon);
         // forwardNoiseless(&handle, &net);
         net.batchSize = BATCH_SIZE;
@@ -111,10 +111,11 @@ int main(int argc, char **argv) {
                 minScore = bestScore;
             }
         }
-        printf("\033[H");
-        printf("%d/%d\n", epoch, EPOCHES);
+        printf("\033[H\033[2K");
+        printf("%d/%d\n\033[2K", epoch, EPOCHES);
         idx = 0;
         for (uint8_t y = 0; y < BOARD_WIDTH; y++) {
+            printf("");
             for (uint8_t x = 0; x < BOARD_WIDTH; x++) {
                 if (x == cx && y == cy) {
                     printf("\x1b[38;2;255;255;0m");
@@ -143,7 +144,7 @@ int main(int argc, char **argv) {
                     idx++;
                 }
             }
-            printf("\n");
+            printf("\n\033[2K");
         }
         printf("\x1b[38;2;255;255;255m");
         
@@ -173,9 +174,9 @@ int main(int argc, char **argv) {
         scoreIdx *= ++scoreIdx != SCORE_SIZE;
         scoreSum -= score[scoreIdx];
         uint32_t scoreIdxCap = epoch >= SCORE_SIZE ? SCORE_SIZE : epoch + 1;
-        printf("\033[2KAverage score: %f\n", scoreSum / scoreIdxCap);
-        printf("\033[2KMax score: %f\n", maxScore);
-        printf("\033[2KMin score: %f\n", minScore);
+        printf("Average score: %f\n\033[2K", scoreSum / scoreIdxCap);
+        printf("Max score: %f\n\033[2K", maxScore);
+        printf("Min score: %f\n\033[2K", minScore);
         if (epoch > EPOCHES * 0.9 && scoreSum / scoreIdxCap > 0.34f) {
             struct timeval tv;
             tv.tv_sec = 0;
@@ -244,8 +245,8 @@ int main(int argc, char **argv) {
                 maxGrad = outputGrads[i * ACTIONS + actions[sampledIdxs[i]]];
             }
         }
-        printf("\033[2KMax grad: %f\n", maxGrad);
-        printf("\033[2KMin grad: %f\n", minGrad);
+        printf("Max grad: %f\n\033[2K", maxGrad);
+        printf("Min grad: %f\n\033[2K", minGrad);
         cudaMemcpy(net.outputGrads[net.layers], outputGrads, ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyHostToDevice);
         // backwardNoisy(&handle, &net);
         backwardNoiseless(&handle, &net);
