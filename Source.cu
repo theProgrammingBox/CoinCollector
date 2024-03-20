@@ -216,26 +216,26 @@ int main(int argc, char **argv) {
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
-            float bestScore = outputs[i * ACTIONS];
-            for (uint8_t j = 1; j < ACTIONS; j++) {
-                if (outputs[i * ACTIONS + j] > bestScore) {
-                    bestScore = outputs[i * ACTIONS + j];
-                }
-            }
-            bestScores[i] = bestScore;
-            // float avgScore = 0.0f;
-            // for (uint8_t j = 0; j < ACTIONS; j++) {
-            //     avgScore += outputs[i * ACTIONS + j];
+            // float bestScore = outputs[i * ACTIONS];
+            // for (uint8_t j = 1; j < ACTIONS; j++) {
+            //     if (outputs[i * ACTIONS + j] > bestScore) {
+            //         bestScore = outputs[i * ACTIONS + j];
+            //     }
             // }
-            // bestScores[i] = avgScore / ACTIONS;
+            // bestScores[i] = bestScore;
+            float avgScore = 0.0f;
+            for (uint8_t j = 0; j < ACTIONS; j++) {
+                avgScore += outputs[i * ACTIONS + j];
+            }
+            bestScores[i] = avgScore / ACTIONS;
         }
         
         for (uint32_t i = 0; i < BATCH_SIZE; i++) {
             cudaMemcpy(net.outputs[0] + i * INPUTS, states + sampledIdxs[i] * BOARD_SIZE, BOARD_SIZE * sizeof(float), cudaMemcpyHostToDevice);
             cudaMemcpy(net.outputs[0] + i * INPUTS + BOARD_SIZE, &one, sizeof(float), cudaMemcpyHostToDevice);
         }
-        // forwardNoisy(&handle, &net, &noise);
         forwardNoiseless(&handle, &net);
+        // forwardNoisy(&handle, &net, &noise);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         memset(outputGrads, 0, ACTIONS * BATCH_SIZE * sizeof(float));
         float minGrad = INFINITY;
@@ -252,8 +252,8 @@ int main(int argc, char **argv) {
         printf("Max grad: %f\n\033[2K", maxGrad);
         printf("Min grad: %f\n\033[2K", minGrad);
         cudaMemcpy(net.outputGrads[net.layers], outputGrads, ACTIONS * BATCH_SIZE * sizeof(float), cudaMemcpyHostToDevice);
-        // backwardNoisy(&handle, &net);
         backwardNoiseless(&handle, &net);
+        // backwardNoisy(&handle, &net);
     }
 
     return 0;
