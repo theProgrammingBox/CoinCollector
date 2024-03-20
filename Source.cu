@@ -10,7 +10,7 @@
 #define QUEUE_SIZE 65536
 #define MIN_QUEUE_SIZE 8192
 #define BATCH_SIZE 512
-#define LEARNING_RATE 0.01f
+#define LEARNING_RATE 0.001f
 #define WEIGHT_DECAY 0.0000f
 #define REWARD_DECAY 0.99f
 #define EPOCHES 65536
@@ -76,17 +76,17 @@ int main(int argc, char **argv) {
         board[py * BOARD_WIDTH + px] = 1.0f;
         float epsilon = (epoch / (EPOCHES * 0.5f));
         epsilon = epsilon > 1.0f ? 0.0f : (1 - epsilon) * 1;
-        forwardNoisy(&handle, &net, &noise, epsilon);
-        // forwardNoiseless(&handle, &net);
+        // forwardNoisy(&handle, &net, &noise, epsilon);
+        forwardNoiseless(&handle, &net);
         cudaMemcpy(outputs, net.outputs[net.layers], ACTIONS * VIS_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
         uint8_t action = 0;
         uint32_t pos = py * BOARD_WIDTH + px;
         uint8_t bias = pos > (cy * BOARD_WIDTH + cx);
-        // float bestScore = outputs[(pos - bias) * ACTIONS] + genNormal(&noise) * epsilon;
-        float bestScore = outputs[(pos - bias) * ACTIONS];
+        float bestScore = outputs[(pos - bias) * ACTIONS] + genNormal(&noise) * epsilon;
+        // float bestScore = outputs[(pos - bias) * ACTIONS];
         for (uint8_t i = 1; i < ACTIONS; i++) {
-            // float sample = outputs[(pos - bias) * ACTIONS + i] + genNormal(&noise) * epsilon;
-            float sample = outputs[(pos - bias) * ACTIONS + i];
+            float sample = outputs[(pos - bias) * ACTIONS + i] + genNormal(&noise) * epsilon;
+            // float sample = outputs[(pos - bias) * ACTIONS + i];
             if (sample > bestScore) {
                 bestScore = sample;
                 action = i;
