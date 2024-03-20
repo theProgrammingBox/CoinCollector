@@ -304,12 +304,12 @@ void forwardNoisy(cublasHandle_t *cublasHandle, Network* net, Noise* noise, uint
         // printTensor(net->weightSamples[net->layers - 1], net->parameters[net->layers] * net->parameters[net->layers - 1], 1);
         // printf("WeightMean\n\033[2K");
         // printTensor(net->weightMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
-        // printf("WeightVar\n\033[2K");
-        // printTensor(net->weightVars[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
-        printf("VarMean\n\033[2K");
-        printTensor(net->weightVarGradMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
-        printf("MeanMean\n\033[2K");
-        printTensor(net->weightMeanGradMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
+        printf("WeightVar\n\033[2K");
+        printTensor(net->weightVars[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
+        // printf("VarMean\n\033[2K");
+        // printTensor(net->weightVarGradMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
+        // printf("MeanMean\n\033[2K");
+        // printTensor(net->weightMeanGradMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
     }
 }
 
