@@ -296,8 +296,8 @@ void forwardNoisy(cublasHandle_t *cublasHandle, Network* net, Noise* noise, uint
         net->outputs[net->layers], net->parameters[net->layers]);
     
     if (debug == 1) {
-        printf("Output\n\033[2K");
-        printTensor(net->outputs[net->layers], net->parameters[net->layers], net->batchSize);
+        // printf("Output\n\033[2K");
+        // printTensor(net->outputs[net->layers], net->parameters[net->layers], net->batchSize);
         // printf("Weight\n\033[2K");
         // printTensor(net->noisyWeights[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
         // printf("WeightSample\n\033[2K");
@@ -306,6 +306,10 @@ void forwardNoisy(cublasHandle_t *cublasHandle, Network* net, Noise* noise, uint
         // printTensor(net->weightMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
         // printf("WeightVar\n\033[2K");
         // printTensor(net->weightVars[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
+        printf("VarMean\n\033[2K");
+        printTensor(net->weightVarGradMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
+        printf("MeanMean\n\033[2K");
+        printTensor(net->weightMeanGradMeans[net->layers - 1], net->parameters[net->layers], net->parameters[net->layers - 1]);
     }
 }
 
@@ -340,11 +344,17 @@ void backwardNoisy(cublasHandle_t *cublasHandle, Network* net) {
         net->outputs[net->layers - 1], net->parameters[net->layers - 1],
         &ZERO,
         net->weightGrads[net->layers - 1], net->parameters[net->layers]);
-        
+    // cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
+    //     net->parameters[net->layers - 1], net->batchSize, net->parameters[net->layers],
+    //     &ONE,
+    //     net->noisyWeights[net->layers - 1], net->parameters[net->layers],
+    //     net->outputGrads[net->layers], net->parameters[net->layers],
+    //     &ZERO,
+    //     net->outputGrads[net->layers - 1], net->parameters[net->layers - 1]);
     cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
         net->parameters[net->layers - 1], net->batchSize, net->parameters[net->layers],
         &ONE,
-        net->noisyWeights[net->layers - 1], net->parameters[net->layers],
+        net->weightMeans[net->layers - 1], net->parameters[net->layers],
         net->outputGrads[net->layers], net->parameters[net->layers],
         &ZERO,
         net->outputGrads[net->layers - 1], net->parameters[net->layers - 1]);
@@ -358,11 +368,17 @@ void backwardNoisy(cublasHandle_t *cublasHandle, Network* net) {
             net->outputs[i], net->parameters[i],
             &ZERO,
             net->weightGrads[i], net->parameters[i + 1]);
-            
+        // cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
+        //     net->parameters[i], net->batchSize, net->parameters[i + 1],
+        //     &ONE,
+        //     net->noisyWeights[i], net->parameters[i + 1],
+        //     net->outputGrads[i + 1], net->parameters[i + 1],
+        //     &ZERO,
+        //     net->outputGrads[i], net->parameters[i]);
         cublasSgemm(*cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N,
             net->parameters[i], net->batchSize, net->parameters[i + 1],
             &ONE,
-            net->noisyWeights[i], net->parameters[i + 1],
+            net->weightMeans[i], net->parameters[i + 1],
             net->outputGrads[i + 1], net->parameters[i + 1],
             &ZERO,
             net->outputGrads[i], net->parameters[i]);
